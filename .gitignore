@@ -30,6 +30,7 @@ yolo/detect.png
 scripts/preview.png
 scripts/_test_depthvis.png
 scripts/detect_and_distance.png
+scripts/sam_segment.png
 *_depthvis.png
 output/
 
