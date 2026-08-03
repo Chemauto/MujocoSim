@@ -1,0 +1,40 @@
+# --- Model weights: downloadable, do NOT commit ---
+# YOLO-World weights (ultralytics auto-downloads *.pt) and the CLIP text
+# encoder it pulls into yolo/weights/ (~338 MB).
+*.pt
+*.pth
+*.onnx
+*.engine
+*.torchscript
+*.mlmodel
+yolo/weights/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# --- Generated render / output images ---
+shot.png
+result.png
+yolo/detect.png
+scripts/preview.png
+scripts/_test_depthvis.png
+*_depthvis.png
+output/
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
