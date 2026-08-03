@@ -1,7 +1,7 @@
 # mujoco-yolo-camera
 
 一个最小化的 MuJoCo 仿真——一个方块 + 一个相机——支持 RGB 与深度渲染、对渲染出的
-RGB 做开放词表检测(YOLO-World),以及点击像素由深度反算距离。结构参考
+RGB 做开放词表检测(YOLO-World),以及点击像素或传入物体名称由深度反算距离。结构参考
 [`Carema`](../Carema)(Orbbec Astra)项目:深度算法放 `utils/`,可运行的示例作为脚本。
 
 ## 目录结构
@@ -12,7 +12,8 @@ RGB 做开放词表检测(YOLO-World),以及点击像素由深度反算距离。
 ├── main.py              # 打开 MuJoCo 仿真器窗口,运行物理
 ├── camera_viewer.py     # 渲染并查看相机的 RGB + 深度
 ├── scripts/
-│   └── get_distance.py  # 打开 RGB,点击任意像素 -> 由深度得到距离
+│   ├── get_distance.py          # 打开 RGB,点击像素 -> 由深度得到距离
+│   └── detect_and_distance.py   # 传入名称 -> YOLO bbox + 该 bbox 的距离
 ├── utils/
 │   └── depth.py         # 深度工具:内参、反投影、伪彩图
 └── yolo/
@@ -37,6 +38,7 @@ python main.py                 # 1) 仿真器窗口(需要图形界面)
 python camera_viewer.py        # 2) 相机 RGB + 深度(保存 shot.png)
 python scripts/get_distance.py # 3) 点击测距(需要图形界面)
 cd yolo && python detect.py    # 4) 对渲染的 RGB 做 YOLO-World 检测(保存 detect.png)
+python scripts/detect_and_distance.py "red cube"  # 5) 传入名称 -> bbox + 距离(保存 detect_and_distance.png)
 ```
 
 ## 距离的计算方式
@@ -51,6 +53,9 @@ R = sqrt(x^2 + y^2 + z^2)     # 到相机的欧氏距离
 
 内参由相机的垂直视场角得到:`fx = fy = H / (2 * tan(fovy / 2))`,`cx = W/2`,
 `cy = H/2`。详见 `utils/depth.py`。
+
+`detect_and_distance.py` 取 bbox 区域深度的中位数作为 `z`,在 bbox 中心反投影,
+得到该物体的 `X/Y/Z/R`(米)。
 
 ## 说明
 
