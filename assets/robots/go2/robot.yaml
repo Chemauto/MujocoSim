@@ -1,0 +1,7 @@
+# 机器人元数据:描述这个资产怎么用,仿真器据此组装场景
+name: go2
+xml: go2.xml                      # 机器人 MJCF(相对本文件夹)
+base_body: base_link              # 根 body(带 freejoint 的那个),出生点/挂载相机的锚
+default_spawn: [0.0, 0.0, 0.445]  # 默认出生位置(可被场景配置的 spawn 覆盖)
+view_extent: 1.0                  # viewer 初始视野范围
+description: "Unitree Go2 四足机器人(MJCF + OBJ,来自 unitree_mujoco)"

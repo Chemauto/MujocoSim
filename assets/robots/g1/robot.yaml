@@ -1,0 +1,7 @@
+# 机器人元数据:描述这个资产怎么用,仿真器据此组装场景
+name: g1
+xml: g1_29dof.xml                 # 机器人 MJCF(相对本文件夹)
+base_body: pelvis                 # 根 body(带 freejoint 的那个),出生点/挂载相机的锚
+default_spawn: [0.0, 0.0, 0.793]  # 默认出生位置(可被场景配置的 spawn 覆盖)
+view_extent: 1.6                  # viewer 初始视野范围
+description: "Unitree G1 人形机器人 29dof(MJCF + STL,来自 unitree_ros)"

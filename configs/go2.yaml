@@ -1,0 +1,73 @@
+# ============================================================
+# 场景配置:go2 四足机器人 + 车载前视相机 + 全局俯视相机
+# 换机器人/相机/物体只改这个文件,代码零改动
+# ============================================================
+
+robot: go2                        # assets/robots/ 下的文件夹名
+# spawn: [0, 0, 0.445]            # 可选:出生位置;省略 = 用 robot.yaml 的 default_spawn
+timestep: 0.002                   # 物理步长(秒)
+realtime: true                    # 按真实时间运行
+
+# ---- 场景中的物体(YOLO 类别 = 这里的 name)----
+objects:
+  - name: red box                 # YOLO-World 可以直接用 "red box" 这种词组检测
+    type: box                     # box / cylinder / sphere / capsule
+    size: [0.16, 0.16, 0.16]      # 完整尺寸(米),box 为 宽x高x深
+    pos: [1.2, 0.0, 0.30]
+    rgba: [0.85, 0.15, 0.15, 1.0]
+
+  - name: blue cylinder
+    type: cylinder
+    size: [0.10, 0.24]            # 直径 x 高
+    pos: [1.6, 0.7, 0.25]
+    rgba: [0.15, 0.3, 0.9, 1.0]
+
+  - name: yellow ball
+    type: sphere
+    size: [0.12]                  # 直径
+    pos: [0.9, -0.9, 0.25]
+    rgba: [0.95, 0.8, 0.1, 1.0]
+
+# ---- 相机(数量/位置随便配)----
+cameras:
+  - name: head_cam                # 挂在机器人身上,跟着机器人动
+    attach: BASE                  # BASE = 机器人根 body(go2 是 base_link,g1 是 pelvis)
+    pos: [0.25, 0.0, 0.15]        # 相对挂载 body 的位置(米)
+    lookat: [1.5, 0.0, 0.05]      # 看向该点(相对同一 body 坐标系);也可用 euler/quat
+    fovy: 75                      # 垂直视场角(度)
+    width: 640
+    height: 480
+
+  - name: overview_cam            # 世界固定俯视相机,始终看向机器人
+    pos: [1.8, -1.8, 1.8]
+    track: BASE                   # BASE = 当前机器人的根 body(换机器人不用改)
+    fovy: 60
+    width: 640
+    height: 480
+
+# ---- YOLO 检测 ----
+# ---- 控制器(上位机 dashboard.py 的模式/参数来源)----
+controller:
+  # 策略关节序:RL 观测/动作的关节排列,内部自动映射到 MuJoCo 执行器
+  joint_names: [FL_hip_joint, FR_hip_joint, RL_hip_joint, RR_hip_joint,
+                FL_thigh_joint, FR_thigh_joint, RL_thigh_joint, RR_thigh_joint,
+                FL_calf_joint, FR_calf_joint, RL_calf_joint, RR_calf_joint]
+  step_dt: 0.02                     # 控制周期 50Hz
+  stiffness: 25.0                   # kp(可标量或 12 个数)
+  damping: 0.5                      # kd
+  default_joint_pos: [0.1, -0.1, 0.1, -0.1, 0.8, 0.8, 1.0, 1.0, -1.5, -1.5, -1.5, -1.5]
+  action_scale: [0.2, 0.2, 0.2, 0.2, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25]
+  policy: "D:/MyFiles/研0/llm-legged-lab/ModelBackup/TransPolicy/WalkFlatLowHeightTransfer.pt"
+  obs_order: yaml                 # 观测拼接顺序(deploy.yaml 文件序 = 训练序)
+  command_smoothing: 0.2          # 指令一阶平滑(与部署端一致)
+  commands: [0.0, 0.0, 0.0]         # 初始速度指令 vx, vy, wz(上位机可调)
+  initial_mode: pd_stand            # damping / force / pd_stand / position / policy
+
+yolo:
+  enabled: true
+  camera: head_cam                # 用哪台相机检测
+  weights: yolov8s-worldv2.pt     # 本地文件路径,或 ultralytics 会自动下载的名字
+  conf: 0.15
+  classes: [red box, blue cylinder, yellow ball]   # 省略 = 自动用上面物体的 name
+  interval: 0.5                   # 每 0.5 秒检测一次
+  save_dir: outputs               # 标注图保存目录(相对项目根)

@@ -1,13 +1,13 @@
 # --- Model weights: downloadable, do NOT commit ---
 # YOLO-World weights (ultralytics auto-downloads *.pt) and the CLIP text
-# encoder it pulls into yolo/weights/ (~338 MB).
+# encoder cache it creates in weights/ (~large).
 *.pt
 *.pth
 *.onnx
 *.engine
 *.torchscript
 *.mlmodel
-yolo/weights/
+weights/
 
 # --- Python ---
 __pycache__/
@@ -24,15 +24,8 @@ env/
 .ipynb_checkpoints/
 
 # --- Generated render / output images ---
-shot.png
-result.png
-yolo/detect.png
-scripts/preview.png
-scripts/_test_depthvis.png
-scripts/detect_and_distance.png
-scripts/sam_segment.png
+outputs/
 *_depthvis.png
-output/
 
 # --- IDE / OS ---
 .vscode/
@@ -40,3 +33,8 @@ output/
 *.swp
 *.swo
 .DS_Store
+
+# --- 本地凭据/私有文件(勿提交) ---
+*.pem
+feishu_*.json
+feishu_*.txt
