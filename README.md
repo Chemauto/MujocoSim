@@ -44,6 +44,11 @@ pip install mujoco opencv-python numpy pyyaml ultralytics
 ## 运行
 
 ```bash
+# 上位机(推荐):模式切换 + 速度遥控 + 相机/YOLO 画面,详见下节
+python dashboard.py
+python dashboard.py --config configs/go2_terrain.yaml   # 地形场景上跑
+
+# 纯仿真 + 检测循环(无 UI)
 python main.py                            # configs/go2.yaml:viewer + 实时检测循环
 python main.py --config configs/go2_terrain.yaml   # 地形场景(楼梯/乱石地/高程图)
 python main.py --config configs/g1.yaml   # 换 G1 人形场景
@@ -155,6 +160,20 @@ objects:
 python dashboard.py                       # go2 上位机 + 3D viewer
 python dashboard.py --config configs/go2_terrain.yaml   # 地形场上跑
 ```
+
+![上位机](docs/dashboard.png)
+
+深色界面上:
+
+- **控制模式**(左侧,单击即切):阻尼模式 / 力控模式 / PD站立 / 位控模式 / RL行走
+- **相机视角 / YOLO 识别**(中央):`yolo.camera` 指定相机的实时画面,
+  检测框 + 类别/置信度/距离实时叠加
+- **右侧调节面板**(随模式切换):
+  - RL行走:vx/vy/wz 速度滑条(−1~1)+ 快捷速度按钮,拖动即走
+  - 位控模式:12 个关节目标角滑条(度)
+  - 力控模式:12 个关节力矩滑条(N·m)
+- **急停 / 复位**:急停 = 速度清零并切回 PD站立;复位 = 回到默认站姿出生点
+- 左下角实时状态:base 高度、姿态角、当前指令
 
 五种模式实时切换(策略来自 `controller.policy` 指向的 TorchScript):
 
