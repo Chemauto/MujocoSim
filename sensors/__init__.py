@@ -1,4 +1,11 @@
-"""sensors —— 传感器(目前是相机):渲染 RGB/深度、内参、坐标换算。"""
-from .camera import SimCamera, get_intrinsics, deproject_pixel, depth_colormap
+"""sensors —— 传感器层(见 docs/sensors.md)。
 
-__all__ = ["SimCamera", "get_intrinsics", "deproject_pixel", "depth_colormap"]
+相机(camera.py)与高度扫描(height_scan.py)属于"外感知"传感器,
+数据归类为 SensorData;电机/关节等本体数据归 RobotState(common/data_model.py)。
+"""
+from .camera import SimCamera, deproject_pixel, depth_colormap, get_intrinsics, \
+    imread_u, imwrite_u
+from .height_scan import HeightScanner
+
+__all__ = ["SimCamera", "HeightScanner", "get_intrinsics", "deproject_pixel",
+           "depth_colormap", "imread_u", "imwrite_u"]

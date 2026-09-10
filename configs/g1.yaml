@@ -44,7 +44,7 @@ controller:
                 left_ankle_pitch_joint, right_ankle_pitch_joint,
                 left_ankle_roll_joint, right_ankle_roll_joint]
   step_dt: 0.02
-  stiffness: 60.0                   # PD 增益按需整定
+  stiffness: 60.0                   # PD 增益为占位值:g1 站立需按官方参数整定,否则会倾倒
   damping: 2.0
   default_joint_pos: [-0.3, -0.3, 0.0, 0.0, 0.0, 0.0, 0.6, 0.6, -0.3, -0.3, 0.0, 0.0]
   action_scale: 0.25
@@ -59,3 +59,12 @@ yolo:
   conf: 0.15
   interval: 0.5
   save_dir: outputs
+
+# ---- 数据导出(ROS2 风格话题总线,见 docs/common.md)----
+data:
+  enabled: true
+  format: jsonl                   # 每行 {t, topic, data},可直接 pandas 读取
+  dir: outputs/data               # 保存目录(相对项目根)
+  rate: 50                        # 记录频率(仿真时间 Hz)
+  topics: [robot/state, env/state, sensor/height_scan]
+

@@ -15,7 +15,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
-from .config import CameraCfg, SimConfig
+from common.config import CameraCfg, SimConfig
 from .terrain import add_terrain, euler_deg_to_quat
 
 
@@ -155,8 +155,6 @@ def build(cfg: SimConfig) -> tuple[mujoco.MjModel, dict]:
     # 机器人的求解器设置(cone/impratio 等)并入场景,避免 attach 冲突告警
     scene.option.cone = robot.option.cone
     scene.option.impratio = robot.option.impratio
-    if robot.option.timestep:
-        robot.option.timestep = cfg.timestep
     scene.option.timestep = cfg.timestep
 
     site = scene.worldbody.add_site(name="robot_mount", pos=[0, 0, 0])

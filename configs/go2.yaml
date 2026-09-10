@@ -45,7 +45,6 @@ cameras:
     width: 640
     height: 480
 
-# ---- YOLO 检测 ----
 # ---- 控制器(上位机 dashboard.py 的模式/参数来源)----
 controller:
   # 策略关节序:RL 观测/动作的关节排列,内部自动映射到 MuJoCo 执行器
@@ -63,6 +62,7 @@ controller:
   commands: [0.0, 0.0, 0.0]         # 初始速度指令 vx, vy, wz(上位机可调)
   initial_mode: pd_stand            # damping / force / pd_stand / position / policy
 
+# ---- YOLO 检测 ----
 yolo:
   enabled: true
   camera: head_cam                # 用哪台相机检测
@@ -71,3 +71,12 @@ yolo:
   classes: [red box, blue cylinder, yellow ball]   # 省略 = 自动用上面物体的 name
   interval: 0.5                   # 每 0.5 秒检测一次
   save_dir: outputs               # 标注图保存目录(相对项目根)
+
+# ---- 数据导出(ROS2 风格话题总线,见 docs/common.md)----
+data:
+  enabled: true
+  format: jsonl                   # 每行 {t, topic, data},可直接 pandas 读取
+  dir: outputs/data               # 保存目录(相对项目根)
+  rate: 50                        # 记录频率(仿真时间 Hz)
+  topics: [robot/state, env/state, sensor/height_scan]
+

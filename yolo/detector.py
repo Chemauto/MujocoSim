@@ -1,13 +1,27 @@
 """detector.py —— YOLO-World 开放词表检测器。
 
-权重、类别、置信度全部来自配置;模型在第一次 detect 时才加载,
-不用 YOLO 时零开销。
+权重、类别、置信度全部来自配置;权重在构造时立即加载,
+缺失/下载失败在构造处即可感知(调用方据此降级)。
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def resolve_weights(weights: str) -> str:
+    """权重路径解析:绝对路径原样;单文件名若项目根不存在则交给 ultralytics 下载;
+    其余相对路径按项目根解析。"""
+    p = Path(weights)
+    if p.is_absolute():
+        return str(p)
+    if len(p.parts) == 1 and not (_PROJECT_ROOT / p).exists():
+        return weights                        # 交给 ultralytics 自动下载
+    return str(_PROJECT_ROOT / p)
 
 
 @dataclass
@@ -21,25 +35,24 @@ class Detection:
 
 
 class YoloWorldDetector:
-    """ultralytics YOLOWorld 封装:set_classes 支持任意文本类别。"""
+    """ultralytics YOLOWorld 封装:set_classes 支持任意文本类别。
+
+    权重在构造时立即加载(缺失/下载失败在构造处即可感知并降级),
+    不做延迟加载。
+    """
 
     def __init__(self, weights: str, classes: list[str], conf: float = 0.2):
-        self.weights = weights
+        self.weights = resolve_weights(weights)
         self.classes = list(classes)
         self.conf = float(conf)
-        self._model = None
-
-    def _ensure_model(self):
-        if self._model is None:
-            from ultralytics import YOLOWorld          # 延迟导入,不用 YOLO 不加载
-            self._model = YOLOWorld(self.weights)
-            if self.classes:
-                self._model.set_classes(self.classes)  # 开放词表:类别随便定
-        return self._model
+        from ultralytics import YOLOWorld
+        self._model = YOLOWorld(self.weights)
+        if self.classes:
+            self._model.set_classes(self.classes)   # 开放词表:类别随便定
 
     def detect(self, rgb: np.ndarray) -> list[Detection]:
         """RGB uint8 图 -> Detection 列表(内部转 BGR,ultralytics 约定)。"""
-        model = self._ensure_model()
+        model = self._model
         bgr = np.ascontiguousarray(rgb[..., ::-1])
         result = model.predict(bgr, conf=self.conf, verbose=False)[0]
         out: list[Detection] = []

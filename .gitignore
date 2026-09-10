@@ -38,3 +38,6 @@ outputs/
 *.pem
 feishu_*.json
 feishu_*.txt
+
+# --- 本地零散脚本 ---
+_toast.ps1

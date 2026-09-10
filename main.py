@@ -17,9 +17,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # 支持从任意目录启动
 
-from simulation import SimWorld, load_config
-from sensors.camera import depth_colormap, imwrite_u
-from yolo import YoloWorldDetector, measure_detections
+from common import load_config
+from rl_control import RobotController
+from sensors import HeightScanner, depth_colormap, imwrite_u
+from simulation import SimWorld
+from common.data_bus import DataExporter
+from yolo import YoloWorldDetector, measure_detections, resolve_weights
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
@@ -35,17 +38,33 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return ap
 
 
-def save_outputs(world: SimWorld, detector, save_dir: Path) -> None:
-    """把检测相机这一帧的 RGB/深度/标注图存盘。"""
-    cam = world.cameras[world.cfg.yolo.camera]
+def build_controller(world, cfg):
+    """组合根:按配置装配 控制器 + 高度扫描仪,并把控制钩子挂到 world。"""
+    if cfg.controller is None:
+        return None
+    hs = cfg.controller.height_scan
+    scanner = HeightScanner(world.model, world.data,
+                            base_body=world.robot_meta["base_body"],
+                            size=tuple(hs.get("size", [1.6, 1.0])),
+                            resolution=hs.get("resolution", 0.1),
+                            ray_offset_z=hs.get("ray_offset_z", 20.0),
+                            height_offset=hs.get("height_offset", 0.5),
+                            geomgroup=hs.get("geomgroup", (1, 1, 0, 0, 0, 0)),
+                            max_bounces=hs.get("max_bounces", 32),
+                            robot_body_ids=world.robot.body_ids())
+    controller = RobotController(world.robot, cfg.controller, height_scanner=scanner)
+    world.pre_step = controller.compute           # 每步 mj_step 前算力矩
+    controller.reset_robot(world)                 # 站姿出生
+    return controller
+
+
+def save_outputs(rgb, depth, dets, detector, save_dir: Path) -> None:
+    """把已经检测好的一帧(rgb/深度/检测列表)存盘。"""
     save_dir.mkdir(parents=True, exist_ok=True)
-    rgb, depth = cam.render_rgbd()
-    dets = []
-    if detector is not None:
-        dets = measure_detections(detector.detect(rgb), cam, depth)
     imwrite_u(str(save_dir / "rgb.png"), rgb[..., ::-1])
     imwrite_u(str(save_dir / "depth.png"), depth_colormap(depth))
-    imwrite_u(str(save_dir / "annotated.png"), detector.annotate(rgb, dets)[..., ::-1])
+    if detector is not None:
+        imwrite_u(str(save_dir / "annotated.png"), detector.annotate(rgb, dets)[..., ::-1])
     print(f"[save] 本帧图像已存到 {save_dir}")
 
 
@@ -69,11 +88,9 @@ def make_detector(cfg):
     """按配置建 YOLO 检测器;权重不可用时降级为 None 并提示。"""
     if not cfg.yolo.enabled:
         return None
-    weights = Path(cfg.yolo.weights)
-    if not weights.is_absolute():
-        weights = PROJECT_ROOT / weights
     try:
-        det = YoloWorldDetector(str(weights), cfg.yolo_classes(), conf=cfg.yolo.conf)
+        weights = resolve_weights(cfg.yolo.weights)
+        det = YoloWorldDetector(weights, cfg.yolo_classes(), conf=cfg.yolo.conf)
         print(f"[yolo] 权重={weights}  类别={cfg.yolo_classes()}  conf={cfg.yolo.conf}")
         return det
     except Exception as e:                     # 权重缺失/下载失败不影响仿真本体
@@ -89,22 +106,30 @@ def main() -> int:
 
     print(f"[sim] 机器人={cfg.robot}  出生点={cfg.spawn or '默认'}  "
           f"相机={[c.name for c in cfg.cameras]}  物体={[o.name for o in cfg.objects]}")
-    world = SimWorld(cfg)
+    from sensors import SimCamera
+    world = SimWorld(cfg, camera_factory=lambda m, d, name, w, h: SimCamera(
+        m, d, name, width=w, height=h))
+    controller = build_controller(world, cfg)     # 控制器(配置缺 controller 段则为 None)
+    world.exporter = DataExporter(cfg.data, world, controller,
+                                  controller.scanner if controller else None)
+    print(f"[sim] 控制模式: {controller.mode if controller else '无(自由运动)'}")
 
     detector = make_detector(cfg)
     last_detect = -1e9
     save_dir = PROJECT_ROOT / cfg.yolo.save_dir
 
     if args.oneshot:                           # 无窗口:跑一段、检测一次、退出
-        for _ in range(int(args.warmup / cfg.timestep)):
-            world.step()
-        if detector is not None and cfg.yolo.camera in world.cameras:
-            cam = world.cameras[cfg.yolo.camera]
-            rgb, depth = cam.render_rgbd()
-            dets = measure_detections(detector.detect(rgb), cam, depth)
-            report(world, dets)
-            save_outputs(world, detector, save_dir)
-        world.close()
+        try:
+            for _ in range(int(args.warmup / cfg.timestep)):
+                world.step()
+            if detector is not None and cfg.yolo.camera in world.cameras:
+                cam = world.cameras[cfg.yolo.camera]
+                rgb, depth = cam.render_rgbd()
+                dets = measure_detections(detector.detect(rgb), cam, depth)
+                report(world, dets)
+                save_outputs(rgb, depth, dets, detector, save_dir)
+        finally:
+            world.close()
         return 0
 
     if not args.no_viewer:
@@ -113,18 +138,21 @@ def main() -> int:
 
     def on_update(w: SimWorld) -> None:
         nonlocal last_detect
-        if detector is None or not w.cameras:
+        if detector is None or w.cfg.yolo.camera not in w.cameras:
             return
         if w.sim_time - last_detect < w.cfg.yolo.interval:
             return
         last_detect = w.sim_time
         cam = w.cameras[w.cfg.yolo.camera]
-        rgb, depth = cam.render_rgbd()
-        dets = measure_detections(detector.detect(rgb), cam, depth)
-        report(w, dets)
-        save_dir.mkdir(parents=True, exist_ok=True)
-        imwrite_u(str(save_dir / "latest_annotated.png"),
-                  detector.annotate(rgb, dets)[..., ::-1])
+        try:
+            rgb, depth = cam.render_rgbd()
+            dets = measure_detections(detector.detect(rgb), cam, depth)
+            report(w, dets)
+            save_dir.mkdir(parents=True, exist_ok=True)
+            imwrite_u(str(save_dir / "latest_annotated.png"),
+                      detector.annotate(rgb, dets)[..., ::-1])
+        except Exception as e:                     # 单帧检测/存图异常不终止仿真
+            print(f"[yolo] 本帧检测失败(跳过): {e!r}")
 
     try:
         world.run(on_update=on_update)

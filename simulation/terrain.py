@@ -21,15 +21,11 @@
 """
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
-from typing import Any
 
 import cv2
 import mujoco
 import numpy as np
-
-from sensors.camera import imread_u
 
 # ---------------------------------------------------------------- 基础工具
 
@@ -226,7 +222,11 @@ def _add_image_hfield(spec: mujoco.MjSpec, p: dict, assets: dict) -> None:
     img_path = Path(p["input_img"])
     if not img_path.is_absolute():
         img_path = Path(__file__).resolve().parent.parent / img_path
-    img = imread_u(str(img_path))
+    # 中文路径安全读取(Python 文件 IO + 内存解码)
+    try:
+        img = cv2.imdecode(np.fromfile(str(img_path), dtype=np.uint8), cv2.IMREAD_COLOR)
+    except OSError:
+        img = None
     if img is None:
         raise FileNotFoundError(f"image_hfield 读不到图片: {img_path}")
     sy, sx = p.get("image_scale", [1.0, 1.0])

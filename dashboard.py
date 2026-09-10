@@ -30,12 +30,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tkinter as tk
 from tkinter import ttk
 
-from simulation import SimWorld, load_config
-from simulation.controller import MODES, MODE_LABELS
+from common import load_config
+from common.data_bus import DataExporter
+from rl_control import RobotController
+from rl_control.controller import MODES, MODE_LABELS
+from sensors import HeightScanner
+from simulation import SimWorld
 
 RAD2DEG, DEG2RAD = 180.0 / np.pi, np.pi / 180.0
 
-# ---------------- 主题 ----------------
+# 主题
 BG = "#14151a"        # 窗口底
 PANEL = "#1f2128"     # 面板
 PANEL2 = "#262933"    # 面板内控件
@@ -45,7 +49,6 @@ MUTED = "#8b93a7"     # 次要文字
 ACCENT = "#3d8bfd"    # 高亮蓝
 GREEN = "#2ecc71"
 RED = "#e74c3c"
-ORANGE = "#f39c12"
 FONT = ("Microsoft YaHei UI", 10)
 FONT_B = ("Microsoft YaHei UI", 10, "bold")
 FONT_S = ("Microsoft YaHei UI", 9)
@@ -53,28 +56,48 @@ FONT_M = ("Consolas", 9)
 FONT_T = ("Microsoft YaHei UI", 13, "bold")
 
 CAM_W, CAM_H = 620, 465       # 相机画面显示尺寸
+PREVIEW_INTERVAL = 0.2        # 无检测器时的相机预览周期(仿真时间秒)
+
+
+def _make_camera(model, data, name, width, height):
+    from sensors import SimCamera
+    return SimCamera(model, data, name, width=width, height=height)
 
 
 class Dashboard:
     def __init__(self, cfg, use_viewer=True):
         self.cfg = cfg
-        self.world = SimWorld(cfg)
+        if cfg.controller is None:
+            raise RuntimeError("配置缺少 controller 段,上位机无法运行")
+        self.world = SimWorld(cfg, camera_factory=lambda m, d, name, w, h: _make_camera(
+            m, d, name, w, h))
         self.lock = threading.Lock()
-        self.world.reset_robot()
         self.use_viewer = use_viewer
         if use_viewer:
             self.world.open_viewer()
 
-        c = self.controller = self.world.controller
-        if c is None:
-            raise RuntimeError("配置缺少 controller 段,上位机无法运行")
+        # 组合根:装配控制器 + 高度扫描仪 + 数据导出
+        hs = dict(cfg.controller.height_scan)
+        scanner = HeightScanner(self.world.model, self.world.data,
+                                base_body=self.world.robot_meta["base_body"],
+                                size=tuple(hs.get("size", [1.6, 1.0])),
+                                resolution=hs.get("resolution", 0.1),
+                                ray_offset_z=hs.get("ray_offset_z", 20.0),
+                                height_offset=hs.get("height_offset", 0.5),
+                                geomgroup=hs.get("geomgroup", (1, 1, 0, 0, 0, 0)),
+                                max_bounces=hs.get("max_bounces", 32),
+                                robot_body_ids=self.world.robot.body_ids())
+        c = self.controller = RobotController(self.world.robot, cfg.controller,
+                                              height_scanner=scanner)
+        self.world.pre_step = c.compute
+        with self.lock:
+            c.reset_robot(self.world)
+        self.world.exporter = DataExporter(cfg.data, self.world, c, scanner)
         self.joint_names = [n.replace("_joint", "") for n in c.joint_names]
 
-        import mujoco
         self.jnt_range_deg = []
-        for name in c.joint_names:
-            jid = mujoco.mj_name2id(self.world.model, mujoco.mjtObj.mjOBJ_JOINT, name)
-            lo, hi = self.world.model.jnt_range[jid]
+        for name in c.joint_names:                # 全名(带 _joint 后缀)
+            lo, hi = self.world.robot.joint_range_rad(name)
             self.jnt_range_deg.append((lo * RAD2DEG - 2, hi * RAD2DEG + 2))
         self.default_deg = [float(v) * RAD2DEG for v in c.q_default]
 
@@ -86,19 +109,20 @@ class Dashboard:
         self._dets = []
         if cfg.yolo.enabled and cfg.yolo.camera in self.world.cameras:
             self.yolo_cam = self.world.cameras[cfg.yolo.camera]
-            from yolo import YoloWorldDetector
             try:
-                from pathlib import Path as _P
-                w = _P(cfg.yolo.weights)
-                if not w.is_absolute():
-                    w = Path(__file__).resolve().parent / w
-                self.detector = YoloWorldDetector(str(w), cfg.yolo_classes(), conf=cfg.yolo.conf)
-                print(f"[yolo] 已启用: {w.name}, 相机 {cfg.yolo.camera}")
+                from yolo import YoloWorldDetector, resolve_weights
+                w = resolve_weights(cfg.yolo.weights)
+                self.detector = YoloWorldDetector(w, cfg.yolo_classes(), conf=cfg.yolo.conf)
+                print(f"[yolo] 已启用: {w}, 相机 {cfg.yolo.camera}")
             except Exception as e:
                 print(f"[yolo] 初始化失败({e}),相机只显示原始画面")
 
         self._pending_reset = False
         self._running = True
+        self._closed = False
+        self._ui_notice = ("", 0.0)          # (文本, 时间戳):5 秒后自动消失
+        self._crash_msg = ""                 # 物理线程崩溃信息
+        self._detect_fail_n = 0              # 检测连续失败计数
         self._photo = None                # 防 PhotoImage 被回收
         self._phys = threading.Thread(target=self._physics_loop, daemon=True)
         self._phys.start()
@@ -109,12 +133,20 @@ class Dashboard:
         step_start = time.perf_counter()
         dt = self.world.model.opt.timestep
         while self._running and (not self.use_viewer or self.world.viewer_running()):
-            with self.lock:
-                if self._pending_reset:
-                    self.world.reset_robot()
-                    self._pending_reset = False
-                self.world.step()
-                self._maybe_detect()
+            try:
+                with self.lock:
+                    if self._pending_reset:
+                        self.controller.reset_robot(self.world)   # 站姿复位 + 清控制器状态
+                        self._pending_reset = False
+                    self.world.step()
+            except Exception as e:
+                print(f"[physics] 物理循环异常,已停止: {e!r}")
+                with self.lock:
+                    self._crash_msg = f"⚠ 物理循环已停止: {e!r}"
+                self._running = False
+                break
+            # YOLO 推理不持锁(渲染/测距在 _maybe_detect 锁内),避免阻塞 UI 取锁
+            self._maybe_detect()
             step_start += dt
             delay = step_start - time.perf_counter()
             if delay > 0:
@@ -123,22 +155,42 @@ class Dashboard:
                 step_start = time.perf_counter()
 
     def _maybe_detect(self):
-        """物理线程里按 yolo.interval 周期抓相机 + 检测。"""
+        """物理线程里按 yolo.interval 周期抓相机 + 检测。
+
+        渲染/测距读仿真状态,持锁;神经网络推理(最慢)在锁外。
+        任何异常都降级为原始画面,绝不影响物理循环。
+        """
         if self.yolo_cam is None:
             return
-        interval = self.cfg.yolo.interval if self.detector else 0.2
+        interval = self.cfg.yolo.interval if self.detector else PREVIEW_INTERVAL
         if self.world.sim_time - self._last_yolo_t < interval:
             return
         self._last_yolo_t = self.world.sim_time
-        rgb = self.yolo_cam.render_rgb()
-        dets = []
-        if self.detector is not None:
-            from yolo import measure_detections
-            dets = measure_detections(self.detector.detect(rgb), self.yolo_cam)
-            self._dets = [(d.name, d.conf, d.distance) for d in dets]
-        else:
-            self._dets = []
-        self._cam_frame = rgb if self.detector is None else self.detector.annotate(rgb, dets)
+        rgb = None
+        detections = []
+        try:
+            with self.lock:
+                rgb, depth = self.yolo_cam.render_rgbd()
+            if self.detector is not None:
+                raw = self.detector.detect(rgb)          # 纯 NN 推理,锁外
+                self._detect_fail_n = 0                  # 成功即清零失败计数
+                if raw:
+                    from yolo import measure_detections
+                    with self.lock:
+                        detections = measure_detections(raw, self.yolo_cam, depth)
+            frame = rgb if self.detector is None else self.detector.annotate(rgb, detections)
+        except Exception as e:
+            self._detect_fail_n += 1
+            print(f"[yolo] 本帧识别失败(连续 {self._detect_fail_n} 次): {e!r}")
+            if self._detect_fail_n >= 5:                 # 连续失败才禁用,瞬时抖动保留重试
+                print("[yolo] 连续失败 5 次,本会话禁用检测")
+                self.detector = None
+            detections = []
+            frame = rgb                                   # rgb 为 None 则保留旧帧
+        with self.lock:
+            self._dets = [(d.name, d.conf, d.distance) for d in detections]
+            if frame is not None:
+                self._cam_frame = frame
 
     # ================= 线程安全操作 =================
     def request_reset(self):
@@ -146,20 +198,24 @@ class Dashboard:
             self._pending_reset = True
 
     def set_mode(self, mode: str):
-        with self.lock:
+        if mode == "policy" and self.controller.runner is None:
+            self._ui_notice = ("⚠ 策略未加载(controller.policy 为空或加载失败),RL行走 不可用",
+                               time.time())
+            return
+        with self.lock:                      # 只锁控制器状态;Tk 控件操作在锁外
             self.controller.mode = mode
-            self.mode_var.set(MODE_LABELS[mode])
-            self._highlight_modes()
-            self._show_panel()
+        self.mode_var.set(MODE_LABELS[mode])
+        self._highlight_modes()
+        self._show_panel()
 
     def emergency_stop(self):
         """急停:速度清零 + 切回 PD站立。"""
         with self.lock:
             c = self.controller
             c.update_commands([0.0, 0.0, 0.0])
-            for v in self.cmd_vars:
-                v.set(0.0)
             c.mode = "pd_stand"
+        for v in self.cmd_vars:
+            v.set(0.0)                       # Tk 变量,锁外更新
         self.mode_var.set(MODE_LABELS["pd_stand"])
         self._highlight_modes()
         self._show_panel()
@@ -241,8 +297,9 @@ class Dashboard:
                                   text=self._camera_placeholder(), fg=MUTED, font=FONT)
         self.cam_label.pack(padx=6, pady=(0, 4))
         self.det_var = tk.StringVar(value="")
-        tk.Label(camf, textvariable=self.det_var, bg=PANEL, fg=GREEN,
-                 font=FONT_S, justify="left", anchor="nw").pack(fill="x", padx=8, pady=(0, 6))
+        self.det_label = tk.Label(camf, textvariable=self.det_var, bg=PANEL, fg=GREEN,
+                                  font=FONT_S, justify="left", anchor="nw")
+        self.det_label.pack(fill="x", padx=8, pady=(0, 6))
 
         # ---- 右列:速度遥控 / 关节滑条 ----
         self.right = tk.Frame(body, bg=PANEL, highlightbackground=LINE, highlightthickness=1)
@@ -320,15 +377,17 @@ class Dashboard:
 
     def _build_joint_sliders(self, mode):
         self._clear_right()
+        n = len(self.joint_names)
         if mode == "position":
             self._panel_title("位控模式 · 关节目标角(度)")
             init, lo_hi = self.default_deg, self.jnt_range_deg
             fmt = "{:+.0f}"
         else:
+            limit = float(self.cfg.controller.force_limit)
             self._panel_title("力控模式 · 关节力矩 (N·m)")
-            init, lo_hi = [0.0] * 12, [(-25, 25)] * 12
+            init, lo_hi = [0.0] * n, [(-limit, limit)] * n
             fmt = "{:+.1f}"
-        for i in range(12):
+        for i in range(n):
             row = tk.Frame(self.right, bg=PANEL)
             row.pack(fill="x", padx=10, pady=(2, 0))
             v = tk.DoubleVar(value=float(init[i]))
@@ -351,7 +410,8 @@ class Dashboard:
 
     # ---- 回调 ----
     def _on_cmd(self):
-        self.controller.update_commands([v.get() for v in self.cmd_vars])
+        with self.lock:
+            self.controller.update_commands([v.get() for v in self.cmd_vars])
 
     def _highlight_modes(self):
         mode = self.controller.mode
@@ -363,27 +423,63 @@ class Dashboard:
 
     # ---- 状态刷新(UI 线程) ----
     def _refresh(self):
-        if not self._running:
+        if self._closed:
             return
-        c = self.controller
-        self.time_badge.config(text=f"t = {self.world.sim_time:6.1f} s")
-        pos, quat, _, _, _ = c.base_state()
+        # viewer 被用户关闭 => 组合根整个退出
+        if self.use_viewer and not self.world.viewer_running():
+            self._shutdown()
+            try:
+                self.root.destroy()
+            except tk.TclError:
+                pass
+            return
+        try:
+            self._refresh_impl()
+        except Exception as e:
+            print(f"[ui] 状态刷新异常: {e!r}")
+        self.root.after(120, self._refresh)
+
+    def _refresh_impl(self):
+        # 物理线程持锁期间写 MjData,这里持同一把锁取一致快照
+        with self.lock:
+            c = self.controller
+            t = self.world.sim_time
+            pos, quat, _, _, _ = c.base_state()
+            cmd = c.cmd_target.copy()
+            frame = self._cam_frame
+            dets = list(self._dets)
+            crash = self._crash_msg
+        self.time_badge.config(text=f"t = {t:6.1f} s")
         wq, x, y, z = quat
         roll = np.degrees(np.arctan2(2 * (wq * x + y * z), 1 - 2 * (x * x + y * y)))
         pitch = np.degrees(np.arcsin(np.clip(2 * (wq * y - z * x), -1, 1)))
         yaw = np.degrees(np.arctan2(2 * (wq * z + x * y), 1 - 2 * (y * y + z * z)))
-        q, _ = c.joint_state()
 
         lines = [f"base高度  {pos[2]:6.3f} m",
                  f"俯仰/横滚 {pitch:6.1f} {roll:6.1f} °",
                  f"偏航      {yaw:6.1f} °",
-                 f"指令      vx={c.cmd_target[0]:+.2f} vy={c.cmd_target[1]:+.2f} wz={c.cmd_target[2]:+.2f}"]
+                 f"指令      vx={cmd[0]:+.2f} vy={cmd[1]:+.2f} wz={cmd[2]:+.2f}"]
         self.status_var.set("\n".join(lines))
         for i, val in enumerate(self._cmd_val_labels):
             val.config(text=f"{self.cmd_vars[i].get():+.2f}")
 
+        # 通知/检测文本:崩溃信息常驻红字;模式拒绝等通知 5 秒;其余显示识别结果
+        if crash:
+            self.det_var.set(crash)
+            self.det_label.config(fg=RED)
+        elif self._ui_notice[0] and time.time() - self._ui_notice[1] < 5.0:
+            self.det_var.set(self._ui_notice[0])
+            self.det_label.config(fg="#f39c12")
+        elif dets:
+            self.det_label.config(fg=GREEN)
+            self.det_var.set("识别: " + "   ".join(
+                f"{n} {conf:.2f}" + (f" {dist:.2f}m" if dist else "")
+                for n, conf, dist in dets[:4]))
+        else:
+            self.det_label.config(fg=MUTED)
+            self.det_var.set("")
+
         # 相机帧
-        frame = self._cam_frame
         if frame is not None:
             try:
                 from PIL import Image, ImageTk
@@ -392,23 +488,27 @@ class Dashboard:
                 self.cam_label.config(image=self._photo, text="", width=CAM_W, height=CAM_H)
             except Exception:
                 pass
-        if self._dets:
-            self.det_var.set("识别: " + "   ".join(
-                f"{n} {conf:.2f}" + (f" {dist:.2f}m" if dist else "") for n, conf, dist in self._dets[:4]))
-        else:
-            self.det_var.set("")
-
-        self.root.after(120, self._refresh)
 
     def _close(self):
-        self._running = False
-        self.world.close()
+        self._shutdown()
         self.root.destroy()
 
     def run(self):
         self.root.mainloop()
+        self._shutdown()
+
+    def _shutdown(self):
+        """幂等收尾:停物理线程(等待其退出)→ 关仿真资源。"""
+        if getattr(self, "_closed", False):
+            return
         self._running = False
+        self._phys.join(timeout=30.0)   # 首帧 YOLO 权重下载/推理可能较慢
+        if self._phys.is_alive():
+            print("[dashboard] 物理线程未在限时内退出,跳过资源释放以避免崩溃")
+            self._closed = True
+            return
         self.world.close()
+        self._closed = True
 
 
 def main():

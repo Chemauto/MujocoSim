@@ -1,9 +1,11 @@
-"""simulation —— 场景组装 + 仿真世界。
+"""simulation —— 仿真场景层(见 docs/simulation.md)。
 
-一个机器人模型 + 若干物体 + 若干相机,全部由 YAML 配置驱动,
-组装用的是 MuJoCo 3.x 的 MjSpec(运行时拼装,不需要改任何 XML)。
+只负责场景搭建与运行:MJCF 组装(builder)、程序化地形(terrain)、
+仿真世界与机器人访问接口(world/robot_api)。控制器在 rl_control/,
+配置加载在 common/config.py。
 """
-from .config import SimConfig, load_config
+from .builder import build
 from .world import SimWorld
+from .robot_api import RobotAPI
 
-__all__ = ["SimConfig", "load_config", "SimWorld"]
+__all__ = ["build", "SimWorld", "RobotAPI"]

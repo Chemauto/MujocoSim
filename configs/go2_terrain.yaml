@@ -102,6 +102,7 @@ controller:
   default_joint_pos: [0.1, -0.1, 0.1, -0.1, 0.8, 0.8, 1.0, 1.0, -1.5, -1.5, -1.5, -1.5]
   action_scale: [0.2, 0.2, 0.2, 0.2, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25]
   policy: "D:/MyFiles/研0/llm-legged-lab/ModelBackup/TransPolicy/WalkRoughTransfer.pt"
+  obs_order: yaml                 # 观测拼接顺序(deploy.yaml 文件序 = 训练序)
   commands: [0.0, 0.0, 0.0]         # 初始速度指令 vx, vy, wz(上位机可调)
   initial_mode: pd_stand            # damping / force / pd_stand / position / policy
 
@@ -113,3 +114,12 @@ yolo:
   classes: [box, orange box, red box]   # 加同义词 "box" 能明显提升召回
   interval: 0.5
   save_dir: outputs
+
+# ---- 数据导出(ROS2 风格话题总线,见 docs/common.md)----
+data:
+  enabled: true
+  format: jsonl                   # 每行 {t, topic, data},可直接 pandas 读取
+  dir: outputs/data               # 保存目录(相对项目根)
+  rate: 50                        # 记录频率(仿真时间 Hz)
+  topics: [robot/state, env/state, sensor/height_scan]
+

@@ -1,34 +1,44 @@
 # mujoco-yolo-camera
 
 一个**配置驱动**的 MuJoCo 仿真平台:任意机器人(Unitree Go2 四足 / G1 人形,可扩展)+
-任意数量/位置的相机 + 场景物体,渲染 RGB 与深度,用 YOLO-World 开放词表检测目标并
-反算距离与世界坐标。**换机器人、挪相机、加物体,只改 YAML,不改一行代码。**
+程序化地形 + 任意数量/位置的相机 + YOLO-World 开放词表检测 + RL 策略控制与上位机。
+**换机器人、挪相机、加物体、换地形、换策略,只改 YAML,不改一行代码。**
+
+> 架构与分层约定见 [docs/architecture.md](docs/architecture.md),
+> 每个模块的详细文档在 [docs/](docs/) 下(simulation / rl_control / sensors / common / yolo / configs)。
 
 ## 目录结构
 
 ```
 .
 ├── main.py              # 主程序:加载配置 -> 仿真 + 检测循环
-├── dashboard.py         # 上位机:模式切换(阻尼/力控/PD站立/位控/RL行走)+ 滑条 + 状态
-├── configs/             # 场景配置(一切可变项都在这里)
-│   ├── go2.yaml         #   go2 + 车载前视相机 + 俯视相机 + 控制器 + walk 策略
-│   ├── go2_terrain.yaml #   go2 + 程序化地形(楼梯/乱石地/高程图,复刻 llm-legged-lab demo)
-│   └── g1.yaml          #   g1 人形,换机器人只是换一份配置
-├── simulation/          # 仿真:配置加载 + MjSpec 运行时组装 + 仿真世界
-│   ├── config.py        #   YAML -> SimConfig(dataclass)
-│   ├── builder.py       #   机器人 + 物体 + 相机 + 地形 -> MjModel(无临时 XML)
-│   ├── controller.py    #   控制层:五种控制模式 + RL 策略推理 + 高度扫描
+├── dashboard.py         # 上位机:模式切换 + 速度遥控 + 相机/YOLO 画面 + 急停复位
+├── configs/             # 全部 YAML 配置(唯一"可变项"来源,见 docs/configs.md)
+│   ├── go2.yaml         #   go2 + 相机 + 物体 + walk 策略 + 数据导出
+│   ├── go2_terrain.yaml #   go2 + 程序化地形(复刻 llm-legged-lab mine 地形)
+│   └── g1.yaml          #   g1 人形
+├── common/              # 通用层:YAML 配置、数据分类模型、数据总线与导出
+│   ├── config.py        #   所有 dataclass + load_config(见 docs/common.md)
+│   ├── data_model.py    #   RobotState(机器人)/ EnvironmentState(环境)/ SensorData(传感器)
+│   └── data_bus.py      #   ROS2 风格话题总线 + JSONL 导出器
+├── simulation/          # 仿真场景层:只管场景搭建与运行(见 docs/simulation.md)
+│   ├── builder.py       #   机器人 + 物体 + 地形 + 相机 -> MjModel(MjSpec 运行时组装)
 │   ├── terrain.py       #   程序化地形(移植自 llm-legged-lab terrain_tool)
-│   └── world.py         #   SimWorld:步进 / viewer / 实时节拍
-├── assets/              # 资产库:一个文件夹 = 一种机器人(见 assets/README.md)
-│   └── robots/
-│       ├── go2/         #   go2.xml + OBJ mesh + robot.yaml(来自 unitree_mujoco)
-│       └── g1/          #   g1_29dof.xml + STL mesh + robot.yaml(来自 unitree_ros)
-├── sensors/             # 传感器:相机渲染与几何
-│   └── camera.py        #   RGB/深度渲染、针孔内参、相机系<->世界系、图片读写
-└── yolo/                # 感知
-    ├── detector.py      #   YOLO-World 封装(类别/权重/阈值全配置)
-    └── measure.py       #   bbox -> 深度中位数 -> 距离 + 相机系/世界系坐标
+│   ├── world.py         #   SimWorld:步进 / viewer / pre_step 与 exporter 钩子
+│   └── robot_api.py     #   RobotAPI:rl_control 访问机器人的唯一通道
+├── rl_control/          # 控制层:五种模式 + 策略推理(见 docs/rl_control.md)
+│   ├── controller.py    #   RobotController:阻尼/力控/PD站立/位控/RL行走
+│   └── policy.py        #   TorchScript 策略加载与推理
+├── sensors/             # 传感器层(见 docs/sensors.md)
+│   ├── camera.py        #   RGB/深度渲染、内参、坐标换算、图片读写
+│   └── height_scan.py   #   187 点高度扫描(RL 外感知)
+├── yolo/                # 感知层(见 docs/yolo.md)
+│   ├── detector.py      #   YOLO-World 开放词表检测
+│   └── measure.py       #   bbox -> 深度测距 + 世界坐标
+├── assets/robots/       # 资产库:一个文件夹 = 一种机器人(见 assets/README.md)
+│   ├── go2/             #   go2.xml + OBJ mesh + robot.yaml
+│   └── g1/              #   g1_29dof.xml + STL mesh + robot.yaml
+└── docs/                # 模块文档:architecture / simulation / rl_control / sensors / common / yolo / configs
 ```
 
 ## 依赖
@@ -36,10 +46,10 @@
 Python 3.10+,MuJoCo 3.x(用了 MjSpec 运行时组装 API):
 
 ```bash
-pip install mujoco opencv-python numpy pyyaml ultralytics
+pip install mujoco opencv-python numpy pyyaml ultralytics pillow torch
 ```
 
-首次运行 YOLO-World 会自动下载权重(约 338 MB)和 CLIP 文本编码器,均已被 git 忽略。
+首次运行 YOLO-World 会自动下载权重(约 25 MB)和 CLIP 文本编码器(数百 MB),均已被 git 忽略。
 
 ## 运行
 
@@ -216,11 +226,15 @@ g1 的 controller 段已配好 12 个腿部关节(阻尼/力控/PD站立/位控)
 ## 程序化使用
 
 ```python
-from simulation import load_config, SimWorld
+from common import load_config
+from sensors import SimCamera
+from simulation import SimWorld
 from yolo import YoloWorldDetector, measure_detections
 
 cfg = load_config("configs/go2.yaml")
-world = SimWorld(cfg)                    # 相机在 world.cameras: {名字: SimCamera}
+# camera_factory 由组合根注入(分层规则:simulation 不依赖 sensors)
+world = SimWorld(cfg, camera_factory=lambda m, d, name, w, h:
+                 SimCamera(m, d, name, width=w, height=h))
 detector = YoloWorldDetector(cfg.yolo.weights, cfg.yolo_classes(), conf=0.15)
 
 for _ in range(250):

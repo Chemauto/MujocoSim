@@ -1,7 +1,12 @@
-"""config.py —— 场景配置:加载 YAML,补全默认值。
+"""config.py —— 全平台唯一的配置层:YAML -> dataclass。
 
-配置是平台的唯一"可变项"来源:换机器人、换相机位置、改物体,
-都只改 YAML,不改代码。
+所有"场景内容"(机器人、物体、地形、相机、控制器、YOLO、数据导出)
+都从 configs/*.yaml 读取;simulation 里的地面/灯光等平台固定底座除外
+(见 docs/simulation.md)。
+
+数据分类约定见 docs/common.md:
+  controller  关节序/kp/kd/默认角/策略路径   -> rl_control
+  data        导出开关/格式/频率/话题列表    -> common.data_bus
 """
 from __future__ import annotations
 
@@ -30,13 +35,14 @@ class ObjectCfg:
     friction: list[float] | None = None     # [滑动, 扭转, 滚动]
 
     def geom_size(self) -> list[float]:
-        """MJCF 的 size 语义:box=半边长, cylinder/capsule=[半径, 半长], sphere=半径。"""
+        """MJCF 的 size 语义(完整尺寸 -> 半尺寸):
+        box=半边长; cylinder/capsule=[半径, 半长]; sphere=半径。"""
         if self.type == "box":
             return [s / 2.0 for s in self.size[:3]]
         if self.type in ("cylinder", "capsule"):
-            return [self.size[0], self.size[1] / 2.0]
+            return [self.size[0] / 2.0, self.size[1] / 2.0]
         if self.type == "sphere":
-            return [self.size[0]]
+            return [self.size[0] / 2.0]
         raise ValueError(f"未知物体类型: {self.type}")
 
 
@@ -89,11 +95,28 @@ class ControllerCfg:
     policy: str = ""                        # TorchScript 路径;空 = 无策略
     obs_order: str = ""                     # "yaml" = deploy.yaml 文件序(推荐);空 = 字母序
     command_smoothing: float = 0.2          # 速度指令一阶平滑系数(与部署端键盘 EMA 一致)
+    force_limit: float = 25.0               # 力控模式滑条限幅(N·m)
     height_scan: dict = field(default_factory=lambda: {
         "size": [1.6, 1.0], "resolution": 0.1,
-        "ray_offset_z": 20.0, "height_offset": 0.5})
+        "ray_offset_z": 20.0, "height_offset": 0.5,
+        "geomgroup": [1, 1, 0, 0, 0, 0], "max_bounces": 32})   # 射线命中的 geom 组(排除机器人自身)
     commands: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])  # vx, vy, wz
     initial_mode: str = "pd_stand"          # damping/force/pd_stand/position/policy
+
+
+@dataclass
+class DataCfg:
+    """数据导出配置(见 common/data_bus.py)。
+
+    topics 从 robot/state、env/state、sensor/height_scan 里选;
+    format 目前支持 jsonl(每行一条 {t, topic, data});rate 为记录频率 Hz。
+    """
+    enabled: bool = False
+    format: str = "jsonl"
+    dir: str = "outputs/data"               # 相对项目根
+    rate: float = 50.0                      # 记录频率(仿真时间 Hz)
+    topics: list[str] = field(default_factory=lambda: [
+        "robot/state", "env/state", "sensor/height_scan"])
 
 
 @dataclass
@@ -107,6 +130,8 @@ class SimConfig:
     cameras: list[CameraCfg] = field(default_factory=list)
     yolo: YoloCfg = field(default_factory=YoloCfg)
     controller: ControllerCfg | None = None             # 控制器;无 = 自由落体演示
+    data: DataCfg = field(default_factory=DataCfg)      # 数据导出
+
 
     # ---- 机器人资产路径 ----
     @property
@@ -130,14 +155,21 @@ class SimConfig:
         return [o.name for o in self.objects] if self.objects else ["box"]
 
 
+def _filter_fields(raw: dict, dataclass_type) -> dict:
+    """按 dataclass 字段过滤 YAML 字典;未知键给出警告(防拼写错误静默失效)。"""
+    fields = dataclass_type.__dataclass_fields__
+    unknown = set(raw) - set(fields)
+    if unknown:
+        print(f"[config] 警告: {dataclass_type.__name__} 收到未知配置键(将忽略): {sorted(unknown)}")
+    return {k: v for k, v in raw.items() if k in fields}
+
+
 def _objects(raw: list[dict]) -> list[ObjectCfg]:
-    return [ObjectCfg(**{k: v for k, v in it.items() if k in ObjectCfg.__dataclass_fields__})
-            for it in raw]
+    return [ObjectCfg(**_filter_fields(it, ObjectCfg)) for it in raw]
 
 
 def _cameras(raw: list[dict]) -> list[CameraCfg]:
-    return [CameraCfg(**{k: v for k, v in it.items() if k in CameraCfg.__dataclass_fields__})
-            for it in raw]
+    return [CameraCfg(**_filter_fields(it, CameraCfg)) for it in raw]
 
 
 def load_config(path: str | Path | None = None, robot: str | None = None) -> SimConfig:
@@ -148,14 +180,20 @@ def load_config(path: str | Path | None = None, robot: str | None = None) -> Sim
     with open(p, encoding="utf-8") as f:
         raw: dict = yaml.safe_load(f) or {}
 
+    known_top = set(SimConfig.__dataclass_fields__)
+    unknown_top = set(raw) - known_top
+    if unknown_top:
+        print(f"[config] 警告: 配置里有未知顶层键(将忽略): {sorted(unknown_top)}")
+
     yolo_raw = raw.get("yolo") or {}
-    yolo = YoloCfg(**{k: v for k, v in yolo_raw.items() if k in YoloCfg.__dataclass_fields__})
+    yolo = YoloCfg(**_filter_fields(yolo_raw, YoloCfg))
 
     controller = None
     if raw.get("controller"):
-        c_raw = dict(raw["controller"])
-        fields = ControllerCfg.__dataclass_fields__
-        controller = ControllerCfg(**{k: v for k, v in c_raw.items() if k in fields})
+        controller = ControllerCfg(**_filter_fields(raw["controller"], ControllerCfg))
+
+    data_raw = raw.get("data") or {}
+    data = DataCfg(**_filter_fields(data_raw, DataCfg))
 
     cfg = SimConfig(
         robot=robot or raw.get("robot", SimConfig.robot),
@@ -167,6 +205,7 @@ def load_config(path: str | Path | None = None, robot: str | None = None) -> Sim
         cameras=_cameras(raw.get("cameras") or []),
         yolo=yolo,
         controller=controller,
+        data=data,
     )
     if cfg.yolo.enabled and cfg.cameras and not cfg.yolo.camera:
         cfg.yolo.camera = cfg.cameras[0].name   # 默认用第一台相机
