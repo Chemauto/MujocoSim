@@ -1,0 +1,9 @@
+name: so101
+xml: mjcf/so101_new_calib.xml
+base_body: base
+default_spawn: [0.0, 0.0, 0.0]
+default_joint_pos: [0.0, -1.0, 1.4, 0.8, 0.0, 0.3]
+floating_base: false
+control: position
+joint_names: [shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper]
+description: "SO-ARM101 6-axis arm (LeRobot calibrated MJCF, position actuators, fixed base)"

@@ -1,0 +1,7 @@
+type: camera
+fovy: 75.0
+width: 640
+height: 480
+rgb: true
+depth: true
+fps: 30.0

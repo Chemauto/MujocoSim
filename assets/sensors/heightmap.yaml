@@ -1,0 +1,4 @@
+type: heightmap
+size: [1.6, 1.0]
+resolution: 0.1
+fps: 20.0

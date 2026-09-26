@@ -1,0 +1,31 @@
+robot: go2
+scene: scenes/flat.xml
+policy: velocity
+
+controller:
+  mode: pd_stand
+  kp: 25.0
+  kd: 0.5
+
+timing:
+  sim_dt: 0.005
+  control_dt: 0.02
+  decimation: 4
+  realtime: true
+
+mounts:
+  - { device: front_camera, name: head_camera, attach: base_link, pos: [0.35, 0, 0.2], rpy: [0, 0, 0] }
+  - { device: front_camera, name: overview, pos: [2.5, -2.5, 1.8], lookat: [0, 0, 0.3] }
+  - { device: lidar_3d, attach: base_link, pos: [0, 0, 0.3] }
+  - { device: heightmap, attach: base_link }
+
+command:
+  components: [vx, vy, yaw_rate]
+  source: ros2
+  limits: [[-1.0, 1.0], [-1.0, 1.0], [-1.0, 1.0]]
+  defaults: [0.0, 0.0, 0.0]
+  smoothing: 0.2
+
+ros2:
+  namespace: ""
+  domain_id: 0

@@ -1,7 +1,13 @@
-# 机器人元数据:描述这个资产怎么用,仿真器据此组装场景
 name: go2
-xml: go2.xml                      # 机器人 MJCF(相对本文件夹)
-base_body: base_link              # 根 body(带 freejoint 的那个),出生点/挂载相机的锚
-default_spawn: [0.0, 0.0, 0.445]  # 默认出生位置(可被场景配置的 spawn 覆盖)
-view_extent: 1.0                  # viewer 初始视野范围
-description: "Unitree Go2 四足机器人(MJCF + OBJ,来自 unitree_mujoco)"
+xml: go2.xml
+base_body: base_link
+default_spawn: [0.0, 0.0, 0.4]
+default_joint_pos: [-0.1, 0.8, -1.5, 0.1, 0.8, -1.5, -0.1, 1.0, -1.5, 0.1, 1.0, -1.5]
+floating_base: true
+control: torque_pd
+joint_names:
+  [FR_hip_joint, FR_thigh_joint, FR_calf_joint,
+   FL_hip_joint, FL_thigh_joint, FL_calf_joint,
+   RR_hip_joint, RR_thigh_joint, RR_calf_joint,
+   RL_hip_joint, RL_thigh_joint, RL_calf_joint]
+description: "Unitree Go2 quadruped (MJCF + OBJ, joint order = MJCF actuator order = real motor order FR/FL/RR/RL)"

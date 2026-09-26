@@ -1,0 +1,72 @@
+active: velocity
+policies:
+  walk:
+    model: policy/walk.onnx
+    input_name: obs
+    output_name: actions
+    observations:
+    - source: gyro
+      span: [0, 3]
+    - source: projected_gravity
+      span: [3, 6]
+    - source: joint_qpos
+      span: [6, 18]
+      params: {offset: zero_pose}
+    - source: joint_qvel
+      span: [18, 30]
+    - source: last_action
+      span: [30, 42]
+    - source: command
+      span: [42, 45]
+      params:
+        components: [vx, vy, yaw_rate]
+    - source: constant_zero
+      span: [45, 49]
+      params: {dim: 4}
+    actions:
+      mode: position_offset
+      scale: 0.25
+      sign: 1
+      limit: 10.0
+      control: {kp: 25.0, kd: 0.5}
+      mapping: auto
+  velocity:
+    model: policy/policy.onnx
+    input_name: obs
+    output_name: actions
+    joint_order: [FL_hip_joint, FR_hip_joint, RL_hip_joint, RR_hip_joint, FL_thigh_joint,
+      FR_thigh_joint, RL_thigh_joint, RR_thigh_joint, FL_calf_joint, FR_calf_joint,
+      RL_calf_joint, RR_calf_joint]
+    observations:
+    - source: gyro
+      span: [0, 3]
+      scale: [0.2, 0.2, 0.2]
+      clip: [-100.0, 100.0]
+    - source: projected_gravity
+      span: [3, 6]
+      clip: [-100.0, 100.0]
+    - source: command
+      span: [6, 9]
+      params:
+        components: [vx, vy, yaw_rate]
+      clip: [-100.0, 100.0]
+    - source: joint_qpos
+      span: [9, 21]
+      params:
+        offset: [0.1, -0.1, 0.1, -0.1, 0.8, 0.8, 1.0, 1.0, -1.5, -1.5, -1.5, -1.5]
+      clip: [-100.0, 100.0]
+    - source: joint_qvel
+      span: [21, 33]
+      scale: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
+      clip: [-100.0, 100.0]
+    - source: last_action
+      span: [33, 45]
+      clip: [-100.0, 100.0]
+    actions:
+      mode: position_offset
+      scale: [0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25]
+      offset: [0.1, -0.1, 0.1, -0.1, 0.8, 0.8, 1.0, 1.0, -1.5, -1.5, -1.5, -1.5]
+      control:
+        kp: [25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0]
+        kd: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+      mapping: auto

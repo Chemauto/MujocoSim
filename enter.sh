@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+if [[ -n "${DISPLAY:-}" ]]; then
+    xhost +local:docker >/dev/null 2>&1 || true
+fi
+
+RUN_FLAGS=(--rm -i)
+if [[ -t 0 && -t 1 ]]; then
+    RUN_FLAGS+=(-t)
+fi
+
+exec docker run "${RUN_FLAGS[@]}" \
+    --gpus all \
+    --network host \
+    --ipc host \
+    -e "DISPLAY=${DISPLAY:-:0}" \
+    -e "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}" \
+    -e "PYTHONDONTWRITEBYTECODE=1" \
+    -v /tmp/.X11-unix:/tmp/.X11-unix \
+    -v "$PWD":/workspace \
+    -w /workspace \
+    mujocosim:latest "$@"

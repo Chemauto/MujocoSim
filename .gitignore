@@ -4,6 +4,7 @@
 *.pt
 *.pth
 *.onnx
+!rl_controller/robot/*/policy/*.onnx
 *.engine
 *.torchscript
 *.mlmodel
@@ -21,6 +22,7 @@ venv/
 env/
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
 .ipynb_checkpoints/
 
 # --- Generated render / output images ---

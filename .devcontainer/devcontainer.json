@@ -1,0 +1,32 @@
+{
+  "name": "MujocoSim",
+  "build": {
+    "dockerfile": "../docker/Dockerfile",
+    "context": ".."
+  },
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+  "runArgs": [
+    "--gpus", "all",
+    "--network", "host",
+    "-e", "DISPLAY=${env:DISPLAY}",
+    "-e", "ROS_DOMAIN_ID=${env:ROS_DOMAIN_ID}",
+    "-v", "/tmp/.X11-unix:/tmp/.X11-unix"
+  ],
+  "containerEnv": {
+    "PYTHONPATH": "/workspace",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "remoteUser": "root",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/bin/python3"
+      }
+    }
+  }
+}
