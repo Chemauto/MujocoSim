@@ -10,6 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         python3-pip \
         libgl1 \
+        libgl1-mesa-dri \
+        libglx-mesa0 \
+        libegl-mesa0 \
         libegl1 \
         libgles2 \
         mesa-utils \
@@ -65,10 +68,20 @@ RUN sh /tmp/omz-install.sh "" --unattended \
     || { git clone --depth=1 https://gitee.com/mirrors/oh-my-zsh.git /root/.oh-my-zsh \
          && cp /root/.oh-my-zsh/templates/zshrc.zsh-template /root/.zshrc; }
 
-RUN sed -i 's/^ZSH_THEME=.*/ZSH_THEME="robbyrussell"/' /root/.zshrc && \
-    sed -i 's/^plugins=.*/plugins=(git docker)/' /root/.zshrc && \
-    echo '[[ -f /opt/ros/jazzy/setup.zsh ]] && source /opt/ros/jazzy/setup.zsh' >> /root/.zshrc && \
+COPY docker/zshrc /root/.zshrc
+COPY docker/patch_resmon.py /tmp/patch_resmon.py
+
+RUN curl -fsSL -o /tmp/rm.vsix "https://mutantdino.gallery.vsassets.io/_apis/public/gallery/publisher/mutantdino/extension/resourcemonitor/latest/assetbyname/Microsoft.VisualStudio.Services.VSIXPackage" && \
+    python3 -m zipfile -e /tmp/rm.vsix /tmp/rmext && \
+    python3 /tmp/patch_resmon.py && \
+    mkdir -p /root/.vscode-server/extensions && \
+    mv /tmp/rmext/extension /root/.vscode-server/extensions/mutantdino.resourcemonitor-1.0.7 && \
+    rm -rf /tmp/rm.vsix /tmp/rmext /tmp/patch_resmon.py
+
+RUN echo 'export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}' >> /root/.bashrc && \
+    echo 'export DISPLAY=${DISPLAY:-:1}' >> /root/.bashrc && \
     echo '[[ -f /opt/ros/jazzy/setup.bash ]] && source /opt/ros/jazzy/setup.bash' >> /root/.bashrc && \
+    echo '[[ $PWD == / ]] && cd /workspace' >> /root/.bashrc && \
     { grep -qx "$(command -v zsh)" /etc/shells || echo "$(command -v zsh)" >> /etc/shells; } && \
     chsh -s "$(command -v zsh)" root
 

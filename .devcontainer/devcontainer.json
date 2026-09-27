@@ -1,30 +1,41 @@
 {
   "name": "MujocoSim",
   "image": "mujocosim:latest",
+  "initializeCommand": "xhost +local:docker >/dev/null 2>&1 || true",
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
   "runArgs": [
-    "--gpus", "all",
+    "--device", "nvidia.com/gpu=all",
     "--network", "host",
     "--ipc", "host",
-    "-e", "DISPLAY=${env:DISPLAY}",
-    "-e", "ROS_DOMAIN_ID=${env:ROS_DOMAIN_ID}",
+    "-v", "/dev/dri:/dev/dri",
     "-v", "/tmp/.X11-unix:/tmp/.X11-unix"
   ],
   "containerEnv": {
     "PYTHONPATH": "/workspace",
-    "PYTHONDONTWRITEBYTECODE": "1"
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "DISPLAY": "${env:DISPLAY}"
   },
   "remoteUser": "root",
   "customizations": {
     "vscode": {
       "extensions": [
         "ms-python.python",
-        "ms-python.vscode-pylance"
+        "ms-python.vscode-pylance",
+        "mutantdino.resourcemonitor"
       ],
       "settings": {
         "python.defaultInterpreterPath": "/usr/bin/python3",
-        "terminal.integrated.defaultProfile.linux": "zsh"
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "resmon.show.cpuusage": true,
+        "resmon.show.cpufreq": true,
+        "resmon.show.mem": true,
+        "resmon.show.battery": false,
+        "resmon.show.disk": false,
+        "resmon.show.cputemp": false,
+        "resmon.mem.unit": "GB",
+        "resmon.freq.unit": "GHz",
+        "resmon.updatefrequencyms": 1000
       }
     }
   }

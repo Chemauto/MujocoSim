@@ -15,10 +15,11 @@ if [[ -t 0 && -t 1 ]]; then
 fi
 
 exec docker run "${RUN_FLAGS[@]}" \
-    --gpus all \
+    --device nvidia.com/gpu=all \
     --network host \
     --ipc host \
-    -e "DISPLAY=${DISPLAY:-:0}" \
+    -v /dev/dri:/dev/dri \
+    -e "DISPLAY=${DISPLAY:-:1}" \
     -e "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}" \
     -e "PYTHONDONTWRITEBYTECODE=1" \
     -v /tmp/.X11-unix:/tmp/.X11-unix \

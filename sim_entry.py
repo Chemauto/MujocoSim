@@ -105,7 +105,8 @@ def main() -> None:
         )
     finally:
         bridge.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
     print(f"[sim] done, sim_time={world.sim_time():.2f}s")
 
 

@@ -1,0 +1,23 @@
+export ZSH="$HOME/.oh-my-zsh"
+ZSH_THEME="robbyrussell"
+plugins=(git docker)
+source $ZSH/oh-my-zsh.sh
+
+export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+export DISPLAY=${DISPLAY:-:1}
+[[ -f /opt/ros/jazzy/setup.zsh ]] && source /opt/ros/jazzy/setup.zsh
+[[ $PWD == / ]] && cd /workspace
+
+setopt PROMPT_SUBST
+__stats_rprompt() {
+  local cur prev dt di cpu=0 mt ma
+  cur=($(awk '/^cpu /{print $2+$3+$4+$5+$6+$7+$8, $5}' /proc/stat))
+  if [[ -f /tmp/.cpu_prev ]]; then
+    prev=($(cat /tmp/.cpu_prev)); dt=$((cur[0]-prev[0])); di=$((cur[1]-prev[1]))
+    (( dt>0 )) && cpu=$(( (dt-di)*100/dt ))
+  fi
+  echo "${cur[0]} ${cur[1]}" > /tmp/.cpu_prev
+  mt=$(awk '/MemTotal/{print $2}' /proc/meminfo); ma=$(awk '/MemAvailable/{print $2}' /proc/meminfo)
+  echo "CPU ${cpu}%% | MEM $(( (mt-ma)*100/mt ))%%"
+}
+RPROMPT='$(__stats_rprompt)'
