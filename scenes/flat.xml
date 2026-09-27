@@ -12,7 +12,9 @@
   </asset>
 
   <worldbody>
-    <light pos="0 0 3.5" dir="0 0 -1" directional="true"/>
+    <!-- castshadow=false: 平行光在大平面上投阴影会使阴影贴图渲染慢 ~70 倍(实测 2325 vs 32 FPS),
+         传感器相机渲染被拖垮导致仿真超载; 关掉后画面略有差异但性能正常 -->
+    <light pos="0 0 3.5" dir="0 0 -1" directional="true" castshadow="false"/>
     <geom name="floor" type="plane" size="20 20 0.05" material="scene_groundplane"/>
 
     <body name="red box" pos="1.2 0 0.3">

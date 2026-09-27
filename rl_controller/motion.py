@@ -78,6 +78,7 @@ class MotionClip:
         else:
             self.anchor = int(anchor_body) if not isinstance(anchor_body, str) else 0
         self.frame = 0
+        self._clock = 0.0
 
     @property
     def num_frames(self) -> int:
@@ -89,9 +90,15 @@ class MotionClip:
 
     def reset(self) -> None:
         self.frame = 0
+        self._clock = 0.0
 
-    def advance(self) -> None:
-        self.frame = (self.frame + 1) % self.num_frames
+    def advance(self, dt: float) -> None:
+        """按仿真时间推进参考帧：帧率跟随剪辑 fps，而非假设一控制步一帧。"""
+        self._clock += dt
+        steps = int(self._clock * self.fps)
+        if steps > 0:
+            self._clock -= steps / self.fps
+            self.frame = (self.frame + steps) % self.num_frames
 
     def commands(self) -> tuple[np.ndarray, np.ndarray]:
         return self.joint_pos[self.frame].copy(), self.joint_vel[self.frame].copy()

@@ -25,6 +25,7 @@ class RobotController:
         self._q_default = np.array(cfg.robot_meta.default_joint_pos, dtype=float)
         self._q_target = self._q_default.copy()
         self._q_des = self._q_default.copy()
+        self._pd_q_des = self._q_default.copy()
         self._slew = float(cfg.controller.slew_rate) * float(cfg.timing.control_dt)
         self._position_actuated = cfg.robot_meta.control == "position"
 
@@ -61,32 +62,41 @@ class RobotController:
         self._q_des = self._q_des + delta
 
     def step(self) -> None:
+        """控制步：确定本周期的位置目标。力矩由 pd_refresh() 在每个物理步刷新。"""
         world = self.world
-        q = world.joint_qpos()
-        qd = world.joint_qvel()
         if self.mode == "damping":
-            ctrl = q.copy() if self._position_actuated else -self.kd * qd
-        elif self.mode == "pd_stand":
+            if self._position_actuated:
+                world.set_ctrl(world.joint_qpos().copy())
+            else:
+                world.set_ctrl(-self.kd * world.joint_qvel())
+            return
+        if self.mode in ("pd_stand", "position"):
             self._slew_toward_target()
-            ctrl = self._pd(self._q_des, q, qd)
-        elif self.mode == "position":
-            self._slew_toward_target()
-            ctrl = self._pd(self._q_des, q, qd)
+            self._pd_q_des = self._q_des.copy()
         else:
             if self.action_fn is None:
                 raise RuntimeError(
                     "motion 模式需要策略推理（rl_controller），当前未接入"
                 )
             targets = np.asarray(self.action_fn(world), dtype=float)
-            ctrl = self._pd(targets, q, qd)
-        world.set_ctrl(ctrl)
-
-    def _pd(self, q_des: np.ndarray, q: np.ndarray, qd: np.ndarray) -> np.ndarray:
+            if targets.shape != self._q_default.shape:
+                raise ValueError(
+                    f"关节目标维度 {targets.shape} != {self._q_default.shape}"
+                )
+            self._pd_q_des = targets
         if self._position_actuated:
-            return q_des.copy()
-        qd_des = (
-            getattr(self.action_fn, "qd_des", None) if self.mode == "motion" else None
-        )
-        if qd_des is None:
-            return self.kp * (q_des - q) - self.kd * qd
-        return self.kp * (q_des - q) + self.kd * (np.asarray(qd_des, dtype=float) - qd)
+            world.set_ctrl(self._pd_q_des.copy())
+        else:
+            self.pd_refresh()
+
+    def pd_refresh(self) -> None:
+        """每个物理步用最新 q/qd 刷新 PD 力矩（位置目标保持本控制周期的值）。
+
+        与训练侧 IsaacLab 隐式执行器一致：PD 在物理步频率上求解，
+        而非 50Hz 零阶保持，否则力矩滞后一个控制周期，腿部会下沉/抖动。
+        """
+        if self._position_actuated or self.mode == "damping":
+            return
+        q = self.world.joint_qpos()
+        qd = self.world.joint_qvel()
+        self.world.set_ctrl(self.kp * (self._pd_q_des - q) - self.kd * qd)

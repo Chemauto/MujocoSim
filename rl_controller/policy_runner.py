@@ -67,10 +67,17 @@ class RlController:
         self.runner = PolicyRunner(profile, policy_dir)
         self.command = np.zeros(command_dim, dtype=float)
         self.last_action = np.zeros(profile.action_dim, dtype=float)
-        self.qd_des: np.ndarray | None = None
         self.kp, self.kd = gains_in_motor_order(
             profile.actions, meta, profile.joint_order
         )
+        if self.motion is not None:
+            ctrl_dt = world.decimation * world.sim_dt
+            fps_err = abs(self.motion.clip.fps - 1.0 / ctrl_dt)
+            if fps_err > 0.05 * self.motion.clip.fps:
+                print(
+                    f"[policy] 注意: 运动剪辑 fps={self.motion.clip.fps:.1f} 与控制频率 "
+                    f"{1.0 / ctrl_dt:.1f}Hz 不同，参考回放按时间轴推进"
+                )
         self.reset()
 
     def reset(self) -> None:
@@ -123,17 +130,9 @@ class RlController:
         )
         action = self.runner.infer(obs)
         self.last_action = action.copy()
-        jv = None
         if self.motion is not None:
-            _, jv = self.motion.clip.commands()
-            self.motion.clip.advance()
+            self.motion.clip.advance(world.decimation * world.sim_dt)
         targets = map_actions(
             action, self.profile.actions, self.meta, self.profile.joint_order
         )
-        if jv is not None:
-            order = self.profile.joint_order or self.meta.joint_names
-            qd = np.zeros(len(self.meta.joint_names))
-            for pol_i, name in enumerate(order):
-                qd[self.meta.joint_names.index(name)] = jv[pol_i]
-            self.qd_des = qd
         return targets
