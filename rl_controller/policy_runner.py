@@ -50,12 +50,15 @@ class RlController:
         policy_dir: Path,
         command_dim: int = 3,
         suite=None,
+        cmd_smoothing: float = 0.0,
     ):
         self.profile = profile
         self.meta = meta
         self.world = world
         self.command_dim = command_dim
         self.suite = suite
+        self.cmd_smoothing = float(cmd_smoothing)
+        self._cmd_target = np.zeros(command_dim, dtype=float)
         self.motion = None
         if profile.motion:
             from .motion import MotionClip, MotionContext
@@ -97,9 +100,17 @@ class RlController:
         command = np.asarray(command, dtype=float)
         if command.shape != (self.command_dim,):
             raise ValueError(f"command 维度 {command.shape} != ({self.command_dim},)")
-        self.command = command
+        self._cmd_target = command.copy()
+
+    def _smooth_command(self) -> None:
+        if self.cmd_smoothing > 0.0:
+            a = self.cmd_smoothing
+            self.command = self.command + a * (self._cmd_target - self.command)
+        else:
+            self.command = self._cmd_target.copy()
 
     def __call__(self, world: SimWorld) -> np.ndarray:
+        self._smooth_command()
         obs = assemble_obs(
             self.profile.observations,
             world,

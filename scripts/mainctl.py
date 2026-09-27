@@ -215,7 +215,7 @@ class MainCtl(QMainWindow):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="MujocoSim 控制器（Qt 面板）")
-    parser.add_argument("--config", default="configs/config.yaml")
+    parser.add_argument("--config", default=str(REPO_ROOT / "configs" / "config.yaml"))
     parser.add_argument("--robot", default=None)
     args = parser.parse_args()
 

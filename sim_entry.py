@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import argparse
 import threading
+from pathlib import Path
 
 import rclpy
 
 from mujocosim.config import load_config
+
+REPO_ROOT = Path(__file__).resolve().parent
 from mujocosim.controller import RobotController
 from mujocosim.ros2_bridge import SimRos2Bridge
 from mujocosim.sensors import SensorSuite
@@ -15,7 +18,11 @@ from rl_controller import RlController, load_policies, policies_path, print_wiri
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="MujocoSim 仿真器")
-    parser.add_argument("--config", default="configs/config.yaml", help="配置文件路径")
+    parser.add_argument(
+        "--config",
+        default=str(REPO_ROOT / "configs" / "config.yaml"),
+        help="配置文件路径",
+    )
     parser.add_argument(
         "--robot", default=None, help="覆盖配置里的机器人（go2 / g1 / so101）"
     )
@@ -65,6 +72,7 @@ def main() -> None:
             policies_path(cfg.robot).parent,
             len(cfg.command.components),
             suite=suite,
+            cmd_smoothing=cfg.command.smoothing,
         )
         if args.command:
             rl.set_command([float(v) for v in args.command.split()])

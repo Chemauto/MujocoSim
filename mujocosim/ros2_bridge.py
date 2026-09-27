@@ -189,6 +189,8 @@ class SimRos2Bridge(Node):
             kd = getattr(self.controller.action_fn, "kd", None)
             if gains is not None and kd is not None:
                 self.controller.set_gains(gains, kd)
+        elif mode != "motion":
+            self.controller.set_gains(self.cfg.controller.kp, self.cfg.controller.kd)
         self.get_logger().info(f"mode -> {mode}")
 
     def _on_cmd_vel(self, msg: Twist) -> None:

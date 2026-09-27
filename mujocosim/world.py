@@ -52,6 +52,8 @@ class SimWorld:
         self.cfg = cfg
         self.model = self._load_model(cfg)
         self.data = mujoco.MjData(self.model)
+        self.sim_dt = float(self.model.opt.timestep)
+        self.decimation = max(1, round(cfg.timing.control_dt / self.sim_dt))
         self.lock = threading.Lock()
         self._base_body_id = mujoco.mj_name2id(
             self.model, mujoco.mjtObj.mjOBJ_BODY, cfg.robot_meta.base_body
@@ -88,7 +90,8 @@ class SimWorld:
             robot.delete(geom)
         for light in list(wb.lights):
             robot.delete(light)
-        scene.option.timestep = cfg.timing.sim_dt
+        native_dt = float(robot.option.timestep) or cfg.timing.sim_dt
+        scene.option.timestep = min(cfg.timing.sim_dt, native_dt)
         scene.option.cone = robot.option.cone
         scene.option.impratio = robot.option.impratio
         mount = scene.worldbody.add_site(name="robot_mount", pos=[0, 0, 0])
@@ -166,7 +169,7 @@ class SimWorld:
         max_sim_time: float | None = None,
         on_control_step: Callable[["SimWorld"], None] | None = None,
     ) -> None:
-        decimation = self.cfg.timing.decimation
+        decimation = self.decimation
         realtime = self.cfg.timing.realtime
         wall_start = time.perf_counter()
         sim_start = self.data.time

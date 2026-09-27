@@ -44,6 +44,7 @@
 python3 sim_entry.py              # 终端1：仿真器（MuJoCo 3D 窗口）
 python3 scripts/mainctl.py        # 终端2：控制器（Qt 面板：模式切换 / 遥控 / 状态）
 python3 scripts/joystick_node.py  # 终端3（可选）：虚拟手柄（鼠标拖摇杆控速度）
+python3 scripts/camera_viewer.py  # 终端4（可选）：相机画面监视（话题出现自动开窗）
 ```
 
 仿真器与控制器是独立进程，通过 ROS2 话题通信，也可以直接用 `ros2 topic pub` 发指令。

@@ -23,7 +23,9 @@ class RobotController:
         self.kp = np.full(n, float(cfg.controller.kp), dtype=float)
         self.kd = np.full(n, float(cfg.controller.kd), dtype=float)
         self._q_default = np.array(cfg.robot_meta.default_joint_pos, dtype=float)
+        self._q_target = self._q_default.copy()
         self._q_des = self._q_default.copy()
+        self._slew = float(cfg.controller.slew_rate) * float(cfg.timing.control_dt)
         self._position_actuated = cfg.robot_meta.control == "position"
 
     def set_gains(self, kp, kd) -> None:
@@ -42,12 +44,21 @@ class RobotController:
         if mode not in CONTROLLER_MODES:
             raise ValueError(f"未知控制模式 '{mode}'，可选 {sorted(CONTROLLER_MODES)}")
         self.mode = mode
+        if mode in ("pd_stand", "position"):
+            self._q_des = self.world.joint_qpos().copy()
+            self._q_target = (
+                self._q_default.copy() if mode == "pd_stand" else self._q_des.copy()
+            )
 
     def apply_joint_target(self, q_des) -> None:
         q = np.asarray(q_des, dtype=float)
         if q.shape != self._q_default.shape:
             raise ValueError(f"关节目标维度 {q.shape} != {self._q_default.shape}")
-        self._q_des = q.copy()
+        self._q_target = q.copy()
+
+    def _slew_toward_target(self) -> None:
+        delta = np.clip(self._q_target - self._q_des, -self._slew, self._slew)
+        self._q_des = self._q_des + delta
 
     def step(self) -> None:
         world = self.world
@@ -56,8 +67,10 @@ class RobotController:
         if self.mode == "damping":
             ctrl = q.copy() if self._position_actuated else -self.kd * qd
         elif self.mode == "pd_stand":
-            ctrl = self._pd(self._q_default, q, qd)
+            self._slew_toward_target()
+            ctrl = self._pd(self._q_des, q, qd)
         elif self.mode == "position":
+            self._slew_toward_target()
             ctrl = self._pd(self._q_des, q, qd)
         else:
             if self.action_fn is None:

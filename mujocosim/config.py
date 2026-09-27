@@ -75,6 +75,7 @@ class ControllerCfg:
     mode: str = "pd_stand"
     kp: float = 25.0
     kd: float = 0.5
+    slew_rate: float = 3.0
 
 
 @dataclass
