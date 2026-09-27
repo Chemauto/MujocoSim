@@ -79,6 +79,21 @@ class SimWorld:
         self.reset()
 
     @staticmethod
+    def _explicit_timestep(xml_path: Path) -> float | None:
+        """读取机器人 XML 里 <option> 显式声明的 timestep；未声明返回 None。"""
+        import re
+
+        text = xml_path.read_text(encoding="utf-8", errors="ignore")
+        for tag in re.finditer(r"<option\b[^>]*>", text):
+            m = re.search(r'timestep\s*=\s*"([^"]+)"', tag.group(0))
+            if m:
+                try:
+                    return float(m.group(1))
+                except ValueError:
+                    return None
+        return None
+
+    @staticmethod
     def _load_model(cfg: SimConfig) -> mujoco.MjModel:
         scene_file = Path(cfg.scene)
         scene_path = scene_file if scene_file.is_absolute() else REPO_ROOT / scene_file
@@ -90,8 +105,13 @@ class SimWorld:
             robot.delete(geom)
         for light in list(wb.lights):
             robot.delete(light)
-        native_dt = float(robot.option.timestep) or cfg.timing.sim_dt
-        scene.option.timestep = min(cfg.timing.sim_dt, native_dt)
+        # 仅当机器人 XML 显式声明 timestep 时才取更小值（如 K1 的 0.001）；
+        # go2 等 XML 未声明时 MjSpec 会填默认值 0.002，不应悄悄把物理步长
+        # 加速到 500Hz——go2 训练与参考项目均为 0.005(200Hz)，500Hz 徒增一倍计算
+        native_dt = SimWorld._explicit_timestep(robot_path)
+        scene.option.timestep = (
+            min(cfg.timing.sim_dt, native_dt) if native_dt else cfg.timing.sim_dt
+        )
         scene.option.cone = robot.option.cone
         scene.option.impratio = robot.option.impratio
         mount = scene.worldbody.add_site(name="robot_mount", pos=[0, 0, 0])
@@ -171,8 +191,13 @@ class SimWorld:
     ) -> None:
         decimation = self.decimation
         realtime = self.cfg.timing.realtime
+        control_dt = self.cfg.timing.control_dt
         wall_start = time.perf_counter()
         sim_start = self.data.time
+        stop_flag = threading.Event()
+
+        def target_wall() -> float:
+            return wall_start + (self.data.time - sim_start)
 
         def period() -> None:
             self.step(decimation)
@@ -180,28 +205,36 @@ class SimWorld:
                 on_control_step(self)
 
         def pace() -> None:
-            if realtime:
-                ahead = (
-                    wall_start + (self.data.time - sim_start)
-                ) - time.perf_counter()
-                if ahead > 0:
-                    time.sleep(ahead)
+            if not realtime:
+                return
+            ahead = target_wall() - time.perf_counter()
+            if ahead > 0.002:
+                time.sleep(ahead - 0.001)
+            while target_wall() - time.perf_counter() > 0:
+                pass
 
-        if not gui:
+        def viewer_loop() -> None:
+            import mujoco.viewer
+
+            with mujoco.viewer.launch_passive(self.model, self.data) as viewer:
+                while viewer.is_running() and not stop_flag.is_set():
+                    with self.lock:
+                        viewer.sync()
+                    time.sleep(control_dt)
+            stop_flag.set()
+
+        if gui:
+            threading.Thread(target=viewer_loop, daemon=True).start()
+            time.sleep(0.3)
+
+        try:
             while max_sim_time is None or self.data.time < max_sim_time:
                 period()
                 pace()
-            return
-
-        import mujoco.viewer
-
-        with mujoco.viewer.launch_passive(self.model, self.data) as viewer:
-            while viewer.is_running():
-                period()
-                viewer.sync()
-                pace()
-                if max_sim_time is not None and self.data.time >= max_sim_time:
+                if stop_flag.is_set():
                     break
+        finally:
+            stop_flag.set()
 
     def sim_time(self) -> float:
         return float(self.data.time)
