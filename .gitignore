@@ -27,6 +27,7 @@ env/
 
 # --- Generated render / output images ---
 outputs/
+MUJOCO_LOG.TXT
 *_depthvis.png
 
 # --- IDE / OS ---
