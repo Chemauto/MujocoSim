@@ -1,5 +1,5 @@
 name: g1
-xml: g1_29dof.xml
+xml: g1.xml
 base_body: pelvis
 default_spawn: [0.0, 0.0, 0.793]
 default_joint_pos:

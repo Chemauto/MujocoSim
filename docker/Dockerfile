@@ -34,6 +34,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libdbus-1-3 \
         libfontconfig1 \
         fonts-noto-cjk \
+        zsh \
+        curl \
         ros-jazzy-rviz2 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -52,3 +54,19 @@ RUN pip install --break-system-packages --no-cache-dir \
 WORKDIR /workspace
 
 ENV PYTHONDONTWRITEBYTECODE=1
+
+RUN curl -fsSL --connect-timeout 15 -o /tmp/omz-install.sh \
+        https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh \
+    || curl -fsSL --connect-timeout 15 -o /tmp/omz-install.sh \
+        https://gitee.com/mirrors/oh-my-zsh/raw/master/tools/install.sh
+
+RUN sh /tmp/omz-install.sh "" --unattended \
+    || { git clone --depth=1 https://gitee.com/mirrors/oh-my-zsh.git /root/.oh-my-zsh \
+         && cp /root/.oh-my-zsh/templates/zshrc.zsh-template /root/.zshrc; }
+
+RUN sed -i 's/^ZSH_THEME=.*/ZSH_THEME="robbyrussell"/' /root/.zshrc && \
+    sed -i 's/^plugins=.*/plugins=(git docker)/' /root/.zshrc && \
+    { grep -qx "$(command -v zsh)" /etc/shells || echo "$(command -v zsh)" >> /etc/shells; } && \
+    chsh -s "$(command -v zsh)" root
+
+CMD ["zsh"]

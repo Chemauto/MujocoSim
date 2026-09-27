@@ -2,6 +2,9 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+echo "🤖 进入 MujocoSim 容器 ..."
+echo "📂 项目目录: $(pwd)（已挂载到 /workspace，本地改动即时生效）"
+
 if [[ -n "${DISPLAY:-}" ]]; then
     xhost +local:docker >/dev/null 2>&1 || true
 fi

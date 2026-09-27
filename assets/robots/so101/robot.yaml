@@ -1,5 +1,5 @@
 name: so101
-xml: mjcf/so101_new_calib.xml
+xml: so101.xml
 base_body: base
 default_spawn: [0.0, 0.0, 0.0]
 default_joint_pos: [0.0, -1.0, 1.4, 0.8, 0.0, 0.3]

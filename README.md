@@ -33,10 +33,10 @@
 ## 🚀 快速开始
 
 ```bash
-# 1. 构建镜像（首次）
+# 1. 构建镜像（首次；构建完成后自动打开 VSCode Dev Container）
 ./build.sh
 
-# 2. 进入容器（两个终端各执行一次；或 VSCode "Reopen in Container" 后开两个终端）
+# 2. 在 VSCode 里打开容器终端（或不开 VSCode 时用 ./enter.sh 进容器）
 ./enter.sh
 
 # 3. 运行程序

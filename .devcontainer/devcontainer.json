@@ -1,14 +1,12 @@
 {
   "name": "MujocoSim",
-  "build": {
-    "dockerfile": "../docker/Dockerfile",
-    "context": ".."
-  },
+  "image": "mujocosim:latest",
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
   "runArgs": [
     "--gpus", "all",
     "--network", "host",
+    "--ipc", "host",
     "-e", "DISPLAY=${env:DISPLAY}",
     "-e", "ROS_DOMAIN_ID=${env:ROS_DOMAIN_ID}",
     "-v", "/tmp/.X11-unix:/tmp/.X11-unix"
@@ -25,7 +23,8 @@
         "ms-python.vscode-pylance"
       ],
       "settings": {
-        "python.defaultInterpreterPath": "/usr/bin/python3"
+        "python.defaultInterpreterPath": "/usr/bin/python3",
+        "terminal.integrated.defaultProfile.linux": "zsh"
       }
     }
   }
