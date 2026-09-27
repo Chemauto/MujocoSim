@@ -1,0 +1,157 @@
+active: dance_002
+policies:
+  dance_002:
+    model: policy/dance_002.onnx
+    motion: motion/k1_mj2_seg1.npz
+    input_name: obs
+    output_name: actions
+    joint_order:
+    - aahead_yaw_joint
+    - aaleft_shoulder_pitch_joint
+    - aaright_shoulder_pitch_joint
+    - left_hip_pitch_joint
+    - right_hip_pitch_joint
+    - aahead_pitch_joint
+    - left_shoulder_roll_joint
+    - right_shoulder_roll_joint
+    - left_hip_roll_joint
+    - right_hip_roll_joint
+    - left_elbow_pitch_joint
+    - right_elbow_pitch_joint
+    - left_hip_yaw_joint
+    - right_hip_yaw_joint
+    - left_elbow_yaw_joint
+    - right_elbow_yaw_joint
+    - left_knee_pitch_joint
+    - right_knee_pitch_joint
+    - left_ankle_pitch_joint
+    - right_ankle_pitch_joint
+    - left_ankle_roll_joint
+    - right_ankle_roll_joint
+    observations:
+    - source: motion_command
+      span:
+      - 0
+      - 44
+      params:
+        dim: 44
+    - source: motion_anchor_ori
+      span:
+      - 44
+      - 50
+      params:
+        dim: 6
+    - source: gyro
+      span:
+      - 50
+      - 53
+    - source: joint_qpos
+      span:
+      - 53
+      - 75
+      params:
+        offset: &id001
+        - 0
+        - 0
+        - 0.0
+        - -1.3
+        - 0
+        - -0.0
+        - 0.0
+        - 1.3
+        - 0
+        - 0.0
+        - -0.0
+        - 0
+        - 0
+        - 0.0
+        - -0.0
+        - 0.0
+        - -0.0
+        - 0
+        - 0
+        - 0.0
+        - -0.0
+        - 0.0
+    - source: joint_qvel
+      span:
+      - 75
+      - 97
+    - source: last_action
+      span:
+      - 97
+      - 119
+    actions:
+      mode: position_offset
+      scale:
+      - 0.375
+      - 0.375
+      - 0.875
+      - 0.875
+      - 0.875
+      - 0.875
+      - 0.875
+      - 0.875
+      - 0.875
+      - 0.875
+      - 0.09375
+      - 0.10938
+      - 0.0625
+      - 0.125
+      - 0.16667
+      - 0.16667
+      - 0.09375
+      - 0.10938
+      - 0.0625
+      - 0.125
+      - 0.16667
+      - 0.16667
+      offset: *id001
+      control:
+        kp:
+        - 4.0
+        - 4.0
+        - 4.0
+        - 4.0
+        - 4.0
+        - 4.0
+        - 4.0
+        - 4.0
+        - 4.0
+        - 4.0
+        - 80.0
+        - 80.0
+        - 80.0
+        - 80.0
+        - 30.0
+        - 30.0
+        - 80.0
+        - 80.0
+        - 80.0
+        - 80.0
+        - 30.0
+        - 30.0
+        kd:
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 2.0
+        - 2.0
+        - 2.0
+        - 2.0
+        - 2.0
+        - 2.0
+        - 2.0
+        - 2.0
+        - 2.0
+        - 2.0
+        - 2.0
+        - 2.0
+      mapping: auto

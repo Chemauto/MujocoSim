@@ -19,7 +19,9 @@ from mujocosim.config import (
 REPO_ROOT = Path(__file__).resolve().parent.parent
 POLICIES_ROOT = REPO_ROOT / "rl_controller" / "robot"
 
-_FREE_DIM_SOURCES = frozenset({"constant_zero", "extra_onnx_input"})
+_FREE_DIM_SOURCES = frozenset(
+    {"constant_zero", "extra_onnx_input", "motion_command", "motion_anchor_ori"}
+)
 
 
 @dataclass
@@ -29,6 +31,7 @@ class PolicyProfile:
     observations: list[ObsPin]
     actions: ActionsCfg
     joint_order: list[str] | None = None
+    motion: str | None = None
     input_name: str = "obs"
     output_name: str = "actions"
     obs_dim: int = 0
@@ -148,6 +151,7 @@ def load_policies(
             observations=observations,
             actions=actions,
             joint_order=joint_order,
+            motion=str(data["motion"]) if data.get("motion") else None,
             input_name=str(data.get("input_name", "obs")),
             output_name=str(data.get("output_name", "actions")),
             obs_dim=obs_dim,

@@ -56,15 +56,42 @@ class RlController:
         self.world = world
         self.command_dim = command_dim
         self.suite = suite
+        self.motion = None
+        if profile.motion:
+            from .motion import MotionClip, MotionContext
+
+            self.motion = MotionContext(MotionClip(policy_dir / profile.motion))
         self.runner = PolicyRunner(profile, policy_dir)
         self.command = np.zeros(command_dim, dtype=float)
         self.last_action = np.zeros(profile.action_dim, dtype=float)
+        self.qd_des: np.ndarray | None = None
         self.kp, self.kd = gains_in_motor_order(
             profile.actions, meta, profile.joint_order
         )
+        self.reset()
 
     def reset(self) -> None:
         self.last_action[:] = 0.0
+        if self.motion is None:
+            return
+        self.motion.reset()
+        clip = self.motion.clip
+        world = self.world
+        with world.lock:
+            if world._free_jid is not None:
+                adr = int(world.model.jnt_qposadr[world._free_jid])
+                pos, quat = clip.anchor_pose()
+                world.data.qpos[adr : adr + 3] = pos
+                world.data.qpos[adr + 3 : adr + 7] = quat
+            jp, _ = clip.commands()
+            order = self.profile.joint_order or self.meta.joint_names
+            for pol_i, name in enumerate(order):
+                motor_i = self.meta.joint_names.index(name)
+                world.data.qpos[world._joint_qadr[motor_i]] = jp[pol_i]
+            world.data.qvel[:] = 0.0
+            import mujoco
+
+            mujoco.mj_forward(world.model, world.data)
 
     def set_command(self, command) -> None:
         command = np.asarray(command, dtype=float)
@@ -81,9 +108,21 @@ class RlController:
             self.last_action,
             self.command,
             self.suite.latest() if self.suite is not None else None,
+            self.motion,
         )
         action = self.runner.infer(obs)
         self.last_action = action.copy()
-        return map_actions(
+        jv = None
+        if self.motion is not None:
+            _, jv = self.motion.clip.commands()
+            self.motion.clip.advance()
+        targets = map_actions(
             action, self.profile.actions, self.meta, self.profile.joint_order
         )
+        if jv is not None:
+            order = self.profile.joint_order or self.meta.joint_names
+            qd = np.zeros(len(self.meta.joint_names))
+            for pol_i, name in enumerate(order):
+                qd[self.meta.joint_names.index(name)] = jv[pol_i]
+            self.qd_des = qd
+        return targets

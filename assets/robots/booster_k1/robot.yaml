@@ -1,0 +1,57 @@
+name: booster_k1
+xml: booster_k1.xml
+base_body: trunk
+default_spawn:
+- 0.0
+- 0.0
+- 1.0
+default_joint_pos:
+- 0.0
+- -0.0
+- 0.0
+- 0.0
+- -0.0
+- -0.0
+- 0.0
+- 1.3
+- 0.0
+- 0.0
+- -1.3
+- 0.0
+- 0.0
+- -0.0
+- 0.0
+- -0.0
+- 0.0
+- 0.0
+- 0.0
+- 0.0
+- 0.0
+- 0.0
+floating_base: true
+control: torque_pd
+joint_names:
+- aahead_yaw_joint
+- aahead_pitch_joint
+- aaleft_shoulder_pitch_joint
+- left_shoulder_roll_joint
+- left_elbow_pitch_joint
+- left_elbow_yaw_joint
+- aaright_shoulder_pitch_joint
+- right_shoulder_roll_joint
+- right_elbow_pitch_joint
+- right_elbow_yaw_joint
+- left_hip_pitch_joint
+- left_hip_roll_joint
+- left_hip_yaw_joint
+- left_knee_pitch_joint
+- left_ankle_pitch_joint
+- left_ankle_roll_joint
+- right_hip_pitch_joint
+- right_hip_roll_joint
+- right_hip_yaw_joint
+- right_knee_pitch_joint
+- right_ankle_pitch_joint
+- right_ankle_roll_joint
+description: Booster K1 22dof humanoid (beyond_mimic MJCF; joint order = MJCF actuator
+  order)

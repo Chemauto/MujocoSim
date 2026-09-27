@@ -36,6 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         fonts-noto-cjk \
         zsh \
         curl \
+        python-is-python3 \
         ros-jazzy-rviz2 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -66,6 +67,8 @@ RUN sh /tmp/omz-install.sh "" --unattended \
 
 RUN sed -i 's/^ZSH_THEME=.*/ZSH_THEME="robbyrussell"/' /root/.zshrc && \
     sed -i 's/^plugins=.*/plugins=(git docker)/' /root/.zshrc && \
+    echo '[[ -f /opt/ros/jazzy/setup.zsh ]] && source /opt/ros/jazzy/setup.zsh' >> /root/.zshrc && \
+    echo '[[ -f /opt/ros/jazzy/setup.bash ]] && source /opt/ros/jazzy/setup.bash' >> /root/.bashrc && \
     { grep -qx "$(command -v zsh)" /etc/shells || echo "$(command -v zsh)" >> /etc/shells; } && \
     chsh -s "$(command -v zsh)" root
 

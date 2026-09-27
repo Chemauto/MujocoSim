@@ -53,6 +53,7 @@ def sample_pin(
     last_action: np.ndarray,
     command: np.ndarray,
     sensors: dict[str, Any] | None = None,
+    motion: Any | None = None,
 ) -> np.ndarray:
     source = pin.source
     if source in ("gyro", "base_ang_vel"):
@@ -94,6 +95,22 @@ def sample_pin(
         return np.asarray(command, dtype=float)
     if source == "constant_zero":
         return np.zeros(int(pin.params["dim"]))
+    if source == "motion_command":
+        if motion is None:
+            raise ConfigError("motion_command 引脚需要运动参考（policy.motion 未配置）")
+        jp, jv = motion.clip.commands()
+        return np.concatenate([jp, jv])
+    if source == "motion_anchor_ori":
+        if motion is None:
+            raise ConfigError(
+                "motion_anchor_ori 引脚需要运动参考（policy.motion 未配置）"
+            )
+        from .motion import matrix_from_quat, subtract_frame_transforms
+
+        base_pos, base_quat = world.base_pose()
+        mpos, mquat = motion.clip.anchor_pose()
+        _, ori_b = subtract_frame_transforms(base_pos, base_quat, mpos, mquat)
+        return matrix_from_quat(ori_b)[:, :2].reshape(-1)
     if source == "height_scan":
         if not sensors:
             raise ConfigError("height_scan 引脚需要传感器数据（SensorSuite 未接入）")
@@ -120,11 +137,14 @@ def assemble_obs(
     last_action: np.ndarray,
     command: np.ndarray,
     sensors: dict[str, Any] | None = None,
+    motion: Any | None = None,
 ) -> np.ndarray:
     parts = []
     for pin in pins:
         value = np.atleast_1d(
-            sample_pin(pin, world, meta, joint_order, last_action, command, sensors)
+            sample_pin(
+                pin, world, meta, joint_order, last_action, command, sensors, motion
+            )
         ).astype(float)
         if pin.history > 1:
             raise ConfigError("history>1 暂未实现（阶段6 后续）")

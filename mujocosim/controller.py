@@ -71,4 +71,9 @@ class RobotController:
     def _pd(self, q_des: np.ndarray, q: np.ndarray, qd: np.ndarray) -> np.ndarray:
         if self._position_actuated:
             return q_des.copy()
-        return self.kp * (q_des - q) - self.kd * qd
+        qd_des = (
+            getattr(self.action_fn, "qd_des", None) if self.mode == "motion" else None
+        )
+        if qd_des is None:
+            return self.kp * (q_des - q) - self.kd * qd
+        return self.kp * (q_des - q) + self.kd * (np.asarray(qd_des, dtype=float) - qd)

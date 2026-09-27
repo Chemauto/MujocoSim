@@ -46,6 +46,8 @@ _SOURCE_TYPES = frozenset(
         "constant_zero",
         "extra_onnx_input",
         "reference_motion",
+        "motion_command",
+        "motion_anchor_ori",
     }
 )
 

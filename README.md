@@ -15,7 +15,7 @@
 
 ## 🎯 这是什么？
 
-一个开箱即用的 MuJoCo 仿真平台：多机器人（Go2 / G1 / SO-ARM101）、场景随手改、
+一个开箱即用的 MuJoCo 仿真平台：多机器人（Go2 / G1 / SO-ARM101 / Booster K1）、场景随手改、
 策略直接跑、状态与传感器走 ROS2 话题，全部在容器里运行。
 
 - 配置文件即工程：机器人、场景、策略映射、传感器开关都写在一份 YAML 里
@@ -23,7 +23,7 @@
 
 ## ✨ 核心特性
 
-- 🦿 **多机器人一键切换** —— Go2 / G1 / SO-ARM101，换一行 YAML
+- 🦿 **多机器人一键切换** —— Go2 / G1 / SO-ARM101 / Booster K1，换一行 YAML
 - 🌍 **场景 XML 手改** —— 场景文件机器人无关，改完立即生效
 - 🧠 **策略映射可配置** —— 观测/动作与策略输入输出的对应关系写在 YAML，加载即校验
 - 📡 **ROS2 话题接口** —— 指令进（cmd_vel / joint_command），状态与传感器出
@@ -76,7 +76,7 @@ BASE_IMAGE=docker.m.daocloud.io/library/ros:jazzy-ros-base ./build.sh
 **换场景 / 换机器人 / 换策略** —— 改 `configs/config.yaml` 三行：
 
 ```yaml
-robot: g1                            # go2 | g1 | so101
+robot: g1                            # go2 | g1 | so101 | booster_k1
 scene: scenes/push_box.xml           # flat.xml | push_box.xml | 自己写的
 policy: walk                         # rl_controller/robot/<robot>/policies.yaml 里的策略名
 ```
