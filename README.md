@@ -44,7 +44,7 @@
 python3 sim_entry.py              # 终端1：仿真器（MuJoCo 3D 窗口）
 python3 scripts/mainctl.py        # 终端2：控制器（Qt 面板：模式切换 / 遥控 / 状态）
 python3 scripts/joystick_node.py  # 终端3（可选）：虚拟手柄（鼠标拖摇杆控速度）
-python3 scripts/camera_viewer.py  # 终端4（可选）：相机画面监视（话题出现自动开窗）
+python3 scripts/camera_viewer.py  # 终端4（可选）：相机画面监视 + YOLO 检测框（话题出现自动开窗）
 ```
 
 仿真器与控制器是独立进程，通过 ROS2 话题通信，也可以直接用 `ros2 topic pub` 发指令。
@@ -57,6 +57,16 @@ python3 sim_entry.py --mode damping                      # 控制模式：dampin
 python3 sim_entry.py --mode motion --command "0.3 0 0"   # 策略运动 + 速度指令
 python3 sim_entry.py --policy dance_002 --mode motion    # 选用指定策略
 python3 sim_entry.py --no-gui                            # 无界面（纯后台）
+```
+
+相机监视自带 YOLOv8s 目标检测：检测框叠加在 RGB 画面上，配合深度画面给出目标距离
+（`R=x.xxm`，bbox 中央深度中位数 + 针孔反投影）。
+
+```bash
+python3 scripts/camera_viewer.py                          # 默认 yolov8s.pt，conf=0.25
+python3 scripts/camera_viewer.py --yolo-conf 0.1          # 调低阈值
+python3 scripts/camera_viewer.py --yolo-classes person    # 只看指定类别
+python3 scripts/camera_viewer.py --no-yolo                # 纯画面
 ```
 
 指定基础镜像源构建：
@@ -170,6 +180,8 @@ MujocoSim/
 │   └── sensors/            # 📷 传感器设备库（相机 / 雷达 / 高度图）
 ├── configs/
 │   └── config.yaml         # ⚙️ 唯一入口：机器人 / 场景 / 策略 / 模式 / mounts
+├── detect/
+│   └── yolo/               # 🎯 YOLOv8s 检测 + 深度测距（yolov8s.pt 权重）
 ├── rl_controller/          # 🧠 策略推理与接线
 │   └── robot/<robot>/
 │       ├── policy/         #    策略模型（ONNX）

@@ -55,6 +55,27 @@ RUN pip install --break-system-packages --no-cache-dir \
         PySide6 \
         pygame
 
+ARG TORCH_WHEELS_URL=https://mirrors.aliyun.com/pytorch-wheels/cu128
+RUN mkdir -p /tmp/whl \
+    && curl -fL --retry 10 --retry-delay 3 --retry-all-errors \
+        --speed-limit 50000 --speed-time 30 -C - \
+        -o "/tmp/whl/torch-2.11.0+cu128-cp312-cp312-manylinux_2_28_x86_64.whl" \
+        "${TORCH_WHEELS_URL}/torch-2.11.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl" \
+    && curl -fL --retry 10 --retry-delay 3 --retry-all-errors \
+        --speed-limit 50000 --speed-time 30 -C - \
+        -o "/tmp/whl/torchvision-0.26.0+cu128-cp312-cp312-manylinux_2_28_x86_64.whl" \
+        "${TORCH_WHEELS_URL}/torchvision-0.26.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl" \
+    && pip install --break-system-packages --no-cache-dir --timeout 120 --retries 8 \
+        --index-url ${PIP_INDEX_URL} \
+        /tmp/whl/*.whl \
+    && rm -rf /tmp/whl
+
+RUN pip install --break-system-packages --no-cache-dir --ignore-installed numpy \
+        --index-url ${PIP_INDEX_URL} \
+    && pip install --break-system-packages --no-cache-dir \
+        --index-url ${PIP_INDEX_URL} \
+        ultralytics
+
 WORKDIR /workspace
 
 ENV PYTHONDONTWRITEBYTECODE=1

@@ -14,7 +14,9 @@ sys.path.insert(0, str(REPO_ROOT))
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CameraInfo, Image
+
+from detect.yolo import YoloDetector, annotate, measure_detections
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QImage, QPixmap
@@ -32,6 +34,7 @@ from PySide6.QtWidgets import (
 TOPIC_RE = re.compile(
     r"^(?:/(?P<ns>[^/]+))?/camera/(?P<cam>[^/]+)/(?P<kind>rgb|depth)/image_raw$"
 )
+INFO_RE = re.compile(r"^(?:/(?P<ns>[^/]+))?/camera/(?P<cam>[^/]+)/rgb/camera_info$")
 
 
 @dataclass
@@ -43,6 +46,40 @@ class Stream:
     last_time: float = 0.0
     active: bool = False
     label: QLabel | None = field(default=None, repr=False)
+    dets: list = field(default_factory=list, repr=False)
+    dets_seq: int = -1
+
+
+class YoloWorker(threading.Thread):
+    """后台检测线程：对每路 RGB 新帧跑 YOLO，结果写回 Stream.dets。"""
+
+    def __init__(self, node: "CameraMonitor", detector: YoloDetector, interval: float):
+        super().__init__(daemon=True)
+        self.node = node
+        self.detector = detector
+        self.interval = interval
+        self._done: dict[tuple[str, str], int] = {}
+
+    def run(self) -> None:
+        while True:
+            time.sleep(self.interval)
+            for key, s in self.node.snapshot().items():
+                if s.kind != "rgb" or s.frame is None or not s.active:
+                    continue
+                if self._done.get(key) == s.seq:
+                    continue
+                self._done[key] = s.seq
+                frame = s.frame
+                try:
+                    dets = self.detector.detect(frame)
+                    depth = self.node.frame_of(s.cam, "depth")
+                    k = self.node.intrinsics(s.cam)
+                    if depth is not None and k is not None:
+                        measure_detections(dets, depth.astype(np.float32), k)
+                    s.dets = dets
+                    s.dets_seq = s.seq
+                except Exception as e:
+                    print(f"[camera_viewer] yolo 检测失败({s.cam}): {e!r}")
 
 
 def image_to_np(msg: Image) -> np.ndarray | None:
@@ -81,8 +118,18 @@ class CameraMonitor(Node):
         self.ns = namespace
         self.streams: dict[tuple[str, str], Stream] = {}
         self._subs: dict[str, object] = {}
+        self._k: dict[str, dict] = {}
         self._lock = threading.Lock()
         self.create_timer(1.0, self._discover)
+
+    def frame_of(self, cam: str, kind: str) -> np.ndarray | None:
+        with self._lock:
+            s = self.streams.get((cam, kind))
+            return None if s is None else s.frame
+
+    def intrinsics(self, cam: str) -> dict | None:
+        with self._lock:
+            return self._k.get(cam)
 
     def _discover(self) -> None:
         names = {
@@ -106,6 +153,20 @@ class CameraMonitor(Node):
                 self.streams.setdefault(
                     key, Stream(cam=m.group("cam"), kind=m.group("kind"))
                 )
+        info_names = {
+            t
+            for t, types in self.get_topic_names_and_types()
+            if "sensor_msgs/msg/CameraInfo" in types
+        }
+        for topic in info_names:
+            m = INFO_RE.match(topic)
+            if not m or topic in self._subs:
+                continue
+            if self.ns and m.group("ns") != self.ns:
+                continue
+            self._subs[topic] = self.create_subscription(
+                CameraInfo, topic, self._make_info_cb(m.group("cam")), 10
+            )
         for key, stream in self.streams.items():
             stream.active = self.count_publishers(self._topic_for(key)) > 0
 
@@ -126,6 +187,19 @@ class CameraMonitor(Node):
                     s.seq += 1
                     s.last_time = time.time()
                     s.active = True
+
+        return cb
+
+    def _make_info_cb(self, cam: str):
+        def cb(msg) -> None:
+            k = msg.k
+            with self._lock:
+                self._k[cam] = {
+                    "fx": float(k[0]),
+                    "fy": float(k[4]),
+                    "cx": float(k[2]),
+                    "cy": float(k[5]),
+                }
 
         return cb
 
@@ -189,6 +263,8 @@ class CameraWindow(QMainWindow):
                     if frame.dtype != np.uint8
                     else frame
                 )
+            elif s.dets:
+                frame = annotate(frame, s.dets)
             h, w = frame.shape[:2]
             qimg = QImage(
                 np.ascontiguousarray(frame).tobytes(), w, h, w * 3, QImage.Format_RGB888
@@ -204,15 +280,43 @@ class CameraWindow(QMainWindow):
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="相机画面实时监视（自动检测话题并开窗）"
+        description="相机画面实时监视（自动检测话题并开窗，含 YOLO 检测框）"
     )
     parser.add_argument("--namespace", default="", help="ROS2 命名空间（默认根）")
+    parser.add_argument("--no-yolo", action="store_true", help="不运行 YOLO 检测")
+    parser.add_argument(
+        "--yolo-weights",
+        default="yolov8s.pt",
+        help="YOLO 权重（默认 detect/yolo/yolov8s.pt）",
+    )
+    parser.add_argument("--yolo-conf", type=float, default=0.25, help="置信度阈值")
+    parser.add_argument(
+        "--yolo-classes", default="", help="只保留这些类别（逗号分隔，空 = 全部）"
+    )
+    parser.add_argument(
+        "--yolo-interval", type=float, default=0.1, help="检测间隔（秒）"
+    )
     args = parser.parse_args()
+
+    detector = None
+    if not args.no_yolo:
+        try:
+            classes = [c.strip() for c in args.yolo_classes.split(",") if c.strip()]
+            detector = YoloDetector(
+                args.yolo_weights, conf=args.yolo_conf, classes=classes or None
+            )
+            print(
+                f"[camera_viewer] yolo 权重={detector.weights} 设备={detector.device}"
+            )
+        except Exception as e:
+            print(f"[camera_viewer] yolo 初始化失败({e!r})，本次运行不启用检测")
 
     rclpy.init()
     node = CameraMonitor(args.namespace)
     spin = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
     spin.start()
+    if detector is not None:
+        YoloWorker(node, detector, args.yolo_interval).start()
     app = QApplication(sys.argv)
     win = CameraWindow(node)
     print("[camera_viewer] 监测中：无相机话题不显示窗口，检测到画面自动打开")
